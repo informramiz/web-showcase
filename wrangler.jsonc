@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "teamboard-showcase",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+  "services": [
+    // Self-reference used by OpenNext; must match the worker name.
+    { "binding": "WORKER_SELF_REFERENCE", "service": "teamboard-showcase" },
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "teamboard-showcase",
+      "database_id": "8840aff5-8a56-458d-8678-918a9e9df827",
+      "migrations_dir": "drizzle",
+    },
+  ],
+  "vars": { "DB_DRIVER": "d1" },
+  "observability": { "enabled": true },
+}

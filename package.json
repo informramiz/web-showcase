@@ -14,9 +14,14 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "db:migrate:remote": "wrangler d1 migrations apply teamboard-showcase --remote",
+    "db:seed:remote": "mkdir -p data && tsx src/db/seed-sql.ts > data/seed.sql && wrangler d1 execute teamboard-showcase --remote --file data/seed.sql"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.20.16",
     "@tanstack/react-query": "^5.107.1",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.4",
@@ -42,7 +47,8 @@
     "tsx": "^4.23.15",
     "typescript": "^5",
     "typescript-eslint": "^8.72.1",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "wrangler": "^4.158.0"
   },
   "engines": {
     "node": ">=22"

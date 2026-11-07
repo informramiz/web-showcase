@@ -1,6 +1,6 @@
 # TeamBoard
 
-**Live demo:** not deployed yet. Planned for Cloudflare Workers with D1 (see [Deploy](#deploy)). Demo login once it is up: `demo@teamboard.dev` / `demo1234`.
+**Live demo:** [teamboard-showcase.pingappslab.workers.dev](https://teamboard-showcase.pingappslab.workers.dev) (Cloudflare Workers + D1). Demo login: `demo@teamboard.dev` / `demo1234`. The demo data is shared and reset from time to time.
 
 A multi-user task and project tracker: sign up, create projects, invite teammates, and move tasks across a Kanban board or work through them in a filtered list.
 
@@ -76,7 +76,7 @@ src/
   app/                        routes: (auth) login and register, projects, project board, /api JSON routes
   proxy.ts                    redirects to /login when there is no session cookie (the real check is server-side)
   core/                       AppError and status mapping, zod parsing helper, in-memory rate limiter
-  db/                         Drizzle schema, SQLite connection, seed script
+  db/                         Drizzle schema, SQLite connection, demo seed (local file and SQL for D1)
   server/                     container (composition root), runtime singleton, route-handler and action helpers
   features/
     auth/
@@ -164,18 +164,26 @@ CI (`.github/workflows/ci.yml`) runs lint, format check, typecheck, tests with c
   - The client IP comes only from `cf-connecting-ip`, which Cloudflare sets and clients can't spoof behind it. `X-Forwarded-For` is never trusted. With no such header (local dev) there is no IP limit.
   - Memory is capped (10,000 keys per limiter). A live window is never evicted. Expired windows are dropped first, and if the store is still full the limiter fails closed: logins that can't be counted are refused.
 - **Accepted trade-offs:** anyone can lock an email out for 15 minutes by failing on purpose, and a flood of distinct keys can make the limiter refuse logins until windows expire. A production build would add an unlock link by email or a CAPTCHA (Cloudflare Turnstile) after the limit.
-- **Limits of the in-memory limiter:** counts live in one process. On Workers each isolate has its own, so a deploy would replace `createMemoryRateLimiter` with Cloudflare's Rate Limiting binding or a Durable Object. The `RateLimiter` interface stays the same.
+- **Limits of the in-memory limiter:** counts live in one process. On Workers each isolate has its own, so the live demo's limits are per isolate, not global. A production deploy would replace `createMemoryRateLimiter` with Cloudflare's Rate Limiting binding or a Durable Object. The `RateLimiter` interface stays the same.
 
 ## Deploy
 
-Not deployed yet. The plan is Cloudflare Workers through [OpenNext](https://opennext.js.org/cloudflare), with D1 as the database:
+The live demo runs on Cloudflare Workers through [OpenNext](https://opennext.js.org/cloudflare), with D1 as the database.
 
-1. `npm i @opennextjs/cloudflare` and `npm i -D wrangler`, then add `open-next.config.ts` and `wrangler.jsonc` with a D1 binding (`"migrations_dir": "drizzle"`).
-2. `wrangler d1 create teamboard`, then `wrangler d1 migrations apply teamboard --remote`.
-3. In `src/server/runtime.ts`, build the container from `drizzle(getCloudflareContext().env.DB)` (`drizzle-orm/d1`) instead of `openSqlite`. Services and repositories don't change.
-4. Swap the rate limiters as described above, and seed the demo data with a one-off script.
+- `wrangler.jsonc` binds the D1 database as `DB` (`"migrations_dir": "drizzle"`, so Drizzle's migrations are D1's) and sets `DB_DRIVER=d1`.
+- `src/server/runtime.ts` builds the container from `drizzle(getCloudflareContext().env.DB)` when `DB_DRIVER` is `d1`, and from a local SQLite file otherwise. Services and repositories are the same on both; they only use awaited queries, which both drivers support.
+- `src/db/seed-sql.ts` seeds an in-memory SQLite database through the services and prints the rows as SQL, since a Node script can't open D1 directly.
 
-`better-sqlite3` is listed in `serverExternalPackages` and is only loaded by the local runtime.
+```bash
+npx wrangler d1 create teamboard-showcase   # once; put the id in wrangler.jsonc
+npm run db:migrate:remote                   # apply drizzle/*.sql to D1
+npm run db:seed:remote                      # reset D1 to the demo data
+npm run preview                             # build and run the worker locally (local D1)
+npm run deploy                              # build and deploy to workers.dev
+E2E_BASE_URL=https://teamboard-showcase.pingappslab.workers.dev npx playwright test board   # smoke-test the deploy
+```
+
+For `npm run preview`, apply migrations and the seed locally first (the same commands with `--local`). `better-sqlite3` is listed in `serverExternalPackages` and is only opened by the local runtime.
 
 ## Decisions and trade-offs
 

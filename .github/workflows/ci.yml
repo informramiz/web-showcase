@@ -22,9 +22,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # typecheck runs `next typegen` first; typed lint rules need the generated route types.
+      - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
-      - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm run build
       - run: npx playwright install --with-deps chromium
