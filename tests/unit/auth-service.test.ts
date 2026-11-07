@@ -24,7 +24,7 @@ function fakes() {
   return { users, sessions, userRepo, sessionRepo };
 }
 
-function service(now: { t: number }, hasher: PasswordHasher = plainHasher, limit = 100) {
+function service(now: { t: number }, hasher: PasswordHasher = plainHasher, limit = 100, failLimit = 100) {
   const f = fakes();
   let n = 0;
   const auth = new AuthService({
@@ -32,6 +32,7 @@ function service(now: { t: number }, hasher: PasswordHasher = plainHasher, limit
     sessions: f.sessionRepo,
     hasher,
     limiter: createMemoryRateLimiter(limit, 60_000, () => now.t),
+    failureLimiter: createMemoryRateLimiter(failLimit, 60_000, () => now.t),
     now: () => new Date(now.t),
     newId: () => `u${++n}`,
   });
@@ -79,19 +80,44 @@ describe("AuthService", () => {
     expect(verified).toEqual(["plain$teamboard-dummy-password", "plain$password1"]);
   });
 
-  it("rate limits login per email and per IP, and resets the email on success", async () => {
+  it("hard-limits login per (email, IP) pair and resets the pair on success", async () => {
     const clock = { t: 0 };
     const { auth } = service(clock, plainHasher, 2);
-    await auth.register(input, { ip: "1.1.1.1" });
+    await auth.register(input);
+    const from = { ip: "1.1.1.1" };
     const bad = { email: input.email, password: "nope" };
-    await expect(auth.login(bad)).rejects.toMatchObject({ kind: "unauthorized" });
-    await expect(auth.login(bad)).rejects.toMatchObject({ kind: "unauthorized" });
-    await expect(auth.login(bad)).rejects.toMatchObject({ kind: "rate_limited" });
+    await expect(auth.login(bad, from)).rejects.toMatchObject({ kind: "unauthorized" });
+    await expect(auth.login(bad, from)).rejects.toMatchObject({ kind: "unauthorized" });
+    await expect(auth.login(bad, from)).rejects.toMatchObject({ kind: "rate_limited" });
     clock.t = 60_000;
-    await auth.login({ email: input.email, password: input.password });
-    await expect(auth.login(bad)).rejects.toMatchObject({ kind: "unauthorized" });
+    await auth.login({ email: input.email, password: input.password }, from);
+    await expect(auth.login(bad, from)).rejects.toMatchObject({ kind: "unauthorized" });
+  });
 
-    // Different emails from one IP are still capped by the IP key.
+  it("does not let an attacker lock out the real user from another IP", async () => {
+    const { auth } = service({ t: 0 }, plainHasher, 2, 3);
+    await auth.register(input);
+    const bad = { email: input.email, password: "nope" };
+    for (let i = 0; i < 5; i++) await expect(auth.login(bad, { ip: "6.6.6.6" })).rejects.toBeDefined();
+    // Attacker is now throttled, but the owner on their own IP still signs in.
+    await expect(auth.login(bad, { ip: "6.6.6.6" })).rejects.toMatchObject({ kind: "rate_limited" });
+    const ok = await auth.login({ email: input.email, password: input.password }, { ip: "7.7.7.7" });
+    expect(ok.user.email).toBe(input.email);
+  });
+
+  it("counts per-email failures across IPs and only after a failed verify", async () => {
+    const { auth } = service({ t: 0 }, plainHasher, 100, 2);
+    await auth.register(input);
+    // Successful logins don't count towards the per-email limit.
+    for (let i = 0; i < 3; i++) await auth.login({ email: input.email, password: input.password }, { ip: `3.0.0.${i}` });
+    const bad = { email: input.email, password: "nope" };
+    await expect(auth.login(bad, { ip: "4.0.0.1" })).rejects.toMatchObject({ kind: "unauthorized" });
+    await expect(auth.login(bad, { ip: "4.0.0.2" })).rejects.toMatchObject({ kind: "unauthorized" });
+    await expect(auth.login(bad, { ip: "4.0.0.3" })).rejects.toMatchObject({ kind: "rate_limited" });
+  });
+
+  it("caps attempts per IP across different emails", async () => {
+    const { auth } = service({ t: 0 }, plainHasher, 2);
     const ip = { ip: "9.9.9.9" };
     await expect(auth.login({ email: "a@test.dev", password: "x" }, ip)).rejects.toMatchObject({ kind: "unauthorized" });
     await expect(auth.login({ email: "b@test.dev", password: "x" }, ip)).rejects.toMatchObject({ kind: "unauthorized" });
