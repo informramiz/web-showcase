@@ -1,4 +1,5 @@
 import { AppError } from "@/core/errors";
+import { createMemoryRateLimiter, type RateLimiter } from "@/core/rate-limit";
 import { parseInput } from "@/core/validation";
 import { generateToken, sha256Hex } from "./crypto";
 import { loginSchema, registerSchema } from "./schemas";
@@ -12,9 +13,18 @@ export interface AuthDeps {
   users: UserRepository;
   sessions: SessionRepository;
   hasher: PasswordHasher;
+  /** Limits attempts per client IP and per email. Defaults to 10 per 15 minutes each. */
+  limiter?: RateLimiter;
   now?: () => Date;
   newId?: () => string;
 }
+
+/** Who is asking; used only for rate limiting. */
+export interface ClientInfo {
+  ip?: string;
+}
+
+export const REGISTER_FAILED = "Could not create an account with these details. If you already have one, sign in.";
 
 export interface SignedIn {
   user: User;
@@ -25,18 +35,23 @@ export interface SignedIn {
 export class AuthService {
   private readonly now: () => Date;
   private readonly newId: () => string;
+  private readonly limiter: RateLimiter;
+  /** Computed up front so the first unknown-email login costs the same as the rest. */
+  private readonly dummyHash: Promise<string>;
 
   constructor(private readonly deps: AuthDeps) {
     this.now = deps.now ?? (() => new Date());
     this.newId = deps.newId ?? (() => crypto.randomUUID());
+    this.limiter = deps.limiter ?? createMemoryRateLimiter(10, 15 * 60 * 1000);
+    this.dummyHash = deps.hasher.hash("teamboard-dummy-password");
   }
 
-  async register(input: unknown): Promise<SignedIn> {
+  async register(input: unknown, client: ClientInfo = {}): Promise<SignedIn> {
     const data = parseInput(registerSchema, input);
+    this.throttle("register", data.email, client);
     if (await this.deps.users.findByEmail(data.email)) {
-      throw new AppError("conflict", "An account with this email already exists", {
-        email: ["An account with this email already exists"],
-      });
+      // Neutral wording: does not confirm that the email is registered.
+      throw new AppError("validation", REGISTER_FAILED, { email: [REGISTER_FAILED] });
     }
     const user = {
       id: this.newId(),
@@ -49,14 +64,25 @@ export class AuthService {
     return this.startSession(toUser(user));
   }
 
-  async login(input: unknown): Promise<SignedIn> {
+  async login(input: unknown, client: ClientInfo = {}): Promise<SignedIn> {
     const data = parseInput(loginSchema, input);
+    this.throttle("login", data.email, client);
     const user = await this.deps.users.findByEmail(data.email);
-    // Same message for unknown email and wrong password, so accounts can't be enumerated.
-    if (!user || !(await this.deps.hasher.verify(data.password, user.passwordHash))) {
-      throw new AppError("unauthorized", "Email or password is incorrect");
-    }
+    // Always run one verify, against a dummy hash when the email is unknown, so response time
+    // doesn't reveal whether an account exists. Same message for both failures, too.
+    const stored = user?.passwordHash ?? (await this.dummyHash);
+    const ok = await this.deps.hasher.verify(data.password, stored);
+    if (!user || !ok) throw new AppError("unauthorized", "Email or password is incorrect");
+    // A successful login clears the per-email counter, so the owner isn't locked out by earlier typos.
+    this.limiter.reset(`login:email:${data.email}`);
     return this.startSession(toUser(user));
+  }
+
+  private throttle(action: string, email: string, client: ClientInfo): void {
+    // Hit both keys (no short-circuit) so each counter advances on every attempt.
+    const byEmail = this.limiter.hit(`${action}:email:${email}`);
+    const byIp = client.ip ? this.limiter.hit(`${action}:ip:${client.ip}`) : true;
+    if (!byEmail || !byIp) throw new AppError("rate_limited", "Too many attempts. Try again in a few minutes.");
   }
 
   /** Returns the user for a session token, or null if missing, unknown or expired. */

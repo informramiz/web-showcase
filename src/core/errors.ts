@@ -1,4 +1,4 @@
-export type AppErrorKind = "validation" | "unauthorized" | "forbidden" | "not_found" | "conflict";
+export type AppErrorKind = "validation" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "rate_limited";
 
 const STATUS: Record<AppErrorKind, number> = {
   validation: 400,
@@ -6,6 +6,7 @@ const STATUS: Record<AppErrorKind, number> = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
+  rate_limited: 429,
 };
 
 /** A failure the domain expects and the transport layer maps to a response. */
