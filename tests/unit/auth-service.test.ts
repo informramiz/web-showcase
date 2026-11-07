@@ -121,9 +121,15 @@ describe("AuthService", () => {
       failureLimiter: failures,
     });
     const ip = { ip: "9.9.9.9" };
-    await expect(auth.login({ email: "a@test.dev", password: "x" }, ip)).rejects.toMatchObject({ kind: "unauthorized" });
-    await expect(auth.login({ email: "b@test.dev", password: "x" }, ip)).rejects.toMatchObject({ kind: "unauthorized" });
-    await expect(auth.login({ email: "c@test.dev", password: "x" }, ip)).rejects.toMatchObject({ kind: "rate_limited" });
+    await expect(auth.login({ email: "a@test.dev", password: "x" }, ip)).rejects.toMatchObject({
+      kind: "unauthorized",
+    });
+    await expect(auth.login({ email: "b@test.dev", password: "x" }, ip)).rejects.toMatchObject({
+      kind: "unauthorized",
+    });
+    await expect(auth.login({ email: "c@test.dev", password: "x" }, ip)).rejects.toMatchObject({
+      kind: "rate_limited",
+    });
     // The blocked attempt for c never reached the failure counter.
     for (let i = 0; i < 99; i++) failures.hit("login:email:c@test.dev");
     expect(failures.isLimited("login:email:c@test.dev")).toBe(false);
@@ -131,6 +137,19 @@ describe("AuthService", () => {
     await expect(auth.login({ email: "c@test.dev", password: "x" }, { ip: "8.8.8.8" })).rejects.toMatchObject({
       kind: "unauthorized",
     });
+  });
+
+  it("blocks a failed login that can't be counted because the failure store is full", async () => {
+    const f = fakes();
+    const failures = createMemoryRateLimiter(100, 60_000, () => 0, 1);
+    failures.hit("login:email:someone@test.dev"); // fills the store with a live window
+    const auth = new AuthService({
+      users: f.userRepo,
+      sessions: f.sessionRepo,
+      hasher: plainHasher,
+      failureLimiter: failures,
+    });
+    await expect(auth.login({ email: "dana@test.dev", password: "x" })).rejects.toMatchObject({ kind: "rate_limited" });
   });
 
   it("rate limits registration per IP", async () => {

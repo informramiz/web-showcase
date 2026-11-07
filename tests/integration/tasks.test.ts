@@ -68,9 +68,9 @@ describe("TaskService + SQLite", () => {
       assigneeId: w.member.id,
     });
     expect(u).toMatchObject({ position: 0.5, title: "renamed", dueDate: "2026-12-01", assigneeId: w.member.id });
-    await expect(
-      w.c.tasks.update(w.member, w.projectId, t.id, { assigneeId: w.outsider.id }),
-    ).rejects.toMatchObject({ kind: "validation" });
+    await expect(w.c.tasks.update(w.member, w.projectId, t.id, { assigneeId: w.outsider.id })).rejects.toMatchObject({
+      kind: "validation",
+    });
     await expect(w.c.tasks.update(w.member, w.projectId, "missing", { title: "y" })).rejects.toMatchObject({
       kind: "not_found",
     });

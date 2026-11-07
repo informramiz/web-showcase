@@ -6,7 +6,6 @@ import type { User } from "../domain/types";
 import { getContainer } from "@/server/runtime";
 import { SESSION_COOKIE } from "./cookie-name";
 
-
 export async function setSessionCookie(token: string, expiresAt: Date): Promise<void> {
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,

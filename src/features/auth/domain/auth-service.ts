@@ -84,7 +84,8 @@ export class AuthService {
     const stored = user?.passwordHash ?? (await this.dummyHash);
     const ok = await this.deps.hasher.verify(data.password, stored);
     if (!user || !ok) {
-      this.failureLimiter.hit(emailKey);
+      // false means over the limit or the store is full; either way the failure can't be counted, so block.
+      if (!this.failureLimiter.hit(emailKey)) throw tooMany();
       throw new AppError("unauthorized", "Email or password is incorrect");
     }
     this.failureLimiter.reset(emailKey);

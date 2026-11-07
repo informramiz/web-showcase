@@ -1,12 +1,11 @@
 import { openSqlite } from "@/db/sqlite";
-import type { User } from "@/features/auth/domain/types";
-import type { PasswordHasher } from "@/features/auth/domain/types";
+import type { PasswordHasher, User } from "@/features/auth/domain/types";
 import { createContainer, type Container } from "@/server/container";
 
 /** Fast, deterministic hasher for tests that are not about hashing. */
 export const plainHasher: PasswordHasher = {
-  hash: async (p) => `plain$${p}`,
-  verify: async (p, stored) => stored === `plain$${p}`,
+  hash: (p) => Promise.resolve(`plain$${p}`),
+  verify: (p, stored) => Promise.resolve(stored === `plain$${p}`),
 };
 
 export interface World {

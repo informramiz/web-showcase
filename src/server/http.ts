@@ -24,7 +24,8 @@ export function withUser<Ctx>(handler: (req: NextRequest, user: User, ctx: Ctx) 
   return async (req: NextRequest, ctx: Ctx): Promise<Response> => {
     try {
       const user = await getContainer().auth.validate(req.cookies.get(SESSION_COOKIE)?.value);
-      if (!user) return NextResponse.json({ error: { kind: "unauthorized", message: "Sign in first" } }, { status: 401 });
+      if (!user)
+        return NextResponse.json({ error: { kind: "unauthorized", message: "Sign in first" } }, { status: 401 });
       return await handler(req, user, ctx);
     } catch (e) {
       return errorResponse(e);

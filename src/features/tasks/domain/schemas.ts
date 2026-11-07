@@ -20,7 +20,7 @@ export const updateTaskSchema = z
     status,
     assigneeId,
     dueDate,
-    position: z.number().finite(),
+    position: z.number(),
   })
   .partial()
   .refine((v) => Object.keys(v).length > 0, "Nothing to update");

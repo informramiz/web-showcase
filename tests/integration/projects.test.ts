@@ -36,9 +36,9 @@ describe("ProjectService + SQLite", () => {
     await w.c.projects.update(w.owner, w.projectId, {});
     expect((await w.c.projects.get(w.owner, w.projectId)).name).toBe("Beta");
 
-    await expect(
-      w.c.projects.addMember(w.member, w.projectId, { email: w.outsider.email }),
-    ).rejects.toMatchObject({ kind: "forbidden" });
+    await expect(w.c.projects.addMember(w.member, w.projectId, { email: w.outsider.email })).rejects.toMatchObject({
+      kind: "forbidden",
+    });
     await expect(w.c.projects.delete(w.member, w.projectId)).rejects.toMatchObject({ kind: "forbidden" });
   });
 
