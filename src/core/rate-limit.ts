@@ -3,6 +3,8 @@ export interface RateLimiter {
   hit(key: string): boolean;
   /** True while `key` has used up its window, without recording an attempt. */
   isLimited(key: string): boolean;
+  /** True if a hit on `key` would be recorded: it has a live window, or there is (or can be made) room for one. */
+  canTrack(key: string): boolean;
   /** Clears the count for `key`. */
   reset(key: string): void;
 }
@@ -45,6 +47,13 @@ export function createMemoryRateLimiter(
     isLimited(key) {
       const w = windows.get(key);
       return live(w, now()) && w.count >= limit;
+    },
+    canTrack(key) {
+      const t = now();
+      if (live(windows.get(key), t) || windows.size < maxKeys) return true;
+      // Expired windows sit at the front, so the oldest one tells us whether hit() could make room.
+      const oldest = windows.values().next().value;
+      return oldest !== undefined && !live(oldest, t);
     },
     reset(key) {
       windows.delete(key);

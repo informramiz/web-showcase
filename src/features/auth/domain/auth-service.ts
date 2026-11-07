@@ -77,7 +77,8 @@ export class AuthService {
     const emailKey = `login:email:${data.email}`;
     // While an email is over its failure limit, every attempt gets the same answer, right password or not.
     // A production build would pair this with an email unlock link or a CAPTCHA.
-    if (this.failureLimiter.isLimited(emailKey)) throw tooMany();
+    // Also refuse when a failure couldn't be counted (store full), so a saturated limiter never fails open.
+    if (this.failureLimiter.isLimited(emailKey) || !this.failureLimiter.canTrack(emailKey)) throw tooMany();
     const user = await this.deps.users.findByEmail(data.email);
     // Always run one verify, against a dummy hash when the email is unknown, so response time
     // doesn't reveal whether an account exists. Same message for both failures, too.

@@ -38,4 +38,15 @@ describe("memory rate limiter", () => {
     expect(rl.hit("b")).toBe(false); // b kept its count
     expect(rl.hit("d")).toBe(false); // b and c are live: full
   });
+
+  it("reports whether a key can be tracked", () => {
+    const clock = { t: 0 };
+    const rl = createMemoryRateLimiter(1, 10, () => clock.t, 1);
+    expect(rl.canTrack("a")).toBe(true);
+    rl.hit("a");
+    expect(rl.canTrack("a")).toBe(true); // live window
+    expect(rl.canTrack("b")).toBe(false); // full of live windows
+    clock.t = 10;
+    expect(rl.canTrack("b")).toBe(true); // a expired, room can be made
+  });
 });

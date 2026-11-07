@@ -152,6 +152,22 @@ describe("AuthService", () => {
     await expect(auth.login({ email: "dana@test.dev", password: "x" })).rejects.toMatchObject({ kind: "rate_limited" });
   });
 
+  it("refuses even a correct password when the failure store is full", async () => {
+    const f = fakes();
+    const failures = createMemoryRateLimiter(100, 60_000, () => 0, 1);
+    const auth = new AuthService({
+      users: f.userRepo,
+      sessions: f.sessionRepo,
+      hasher: plainHasher,
+      failureLimiter: failures,
+    });
+    await auth.register(input);
+    failures.hit("login:email:someone@test.dev");
+    await expect(auth.login({ email: input.email, password: input.password })).rejects.toMatchObject({
+      kind: "rate_limited",
+    });
+  });
+
   it("rate limits registration per IP", async () => {
     const { auth } = service({ t: 0 }, plainHasher, 1);
     await auth.register(input, { ip: "2.2.2.2" });
