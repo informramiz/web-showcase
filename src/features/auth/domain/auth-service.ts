@@ -13,9 +13,9 @@ export interface AuthDeps {
   users: UserRepository;
   sessions: SessionRepository;
   hasher: PasswordHasher;
-  /** Limits attempts per (email, IP) pair and per IP. Defaults to 10 per 15 minutes each. */
-  limiter?: RateLimiter;
-  /** Counts failed logins per email, across all IPs. Defaults to 50 per 15 minutes. */
+  /** All auth attempts per client IP. Defaults to 20 per 15 minutes. */
+  ipLimiter?: RateLimiter;
+  /** Failed logins per email, across all IPs. Defaults to 10 per 15 minutes. */
   failureLimiter?: RateLimiter;
   now?: () => Date;
   newId?: () => string;
@@ -28,8 +28,6 @@ export interface ClientInfo {
 
 export const REGISTER_FAILED = "Could not create an account with these details. If you already have one, sign in.";
 
-const pairKey = (action: string, email: string, client: ClientInfo) =>
-  `${action}:pair:${email}|${client.ip ?? "-"}`;
 const tooMany = () => new AppError("rate_limited", "Too many attempts. Try again in a few minutes.");
 
 export interface SignedIn {
@@ -41,7 +39,7 @@ export interface SignedIn {
 export class AuthService {
   private readonly now: () => Date;
   private readonly newId: () => string;
-  private readonly limiter: RateLimiter;
+  private readonly ipLimiter: RateLimiter;
   private readonly failureLimiter: RateLimiter;
   /** Computed up front so the first unknown-email login costs the same as the rest. */
   private readonly dummyHash: Promise<string>;
@@ -49,14 +47,14 @@ export class AuthService {
   constructor(private readonly deps: AuthDeps) {
     this.now = deps.now ?? (() => new Date());
     this.newId = deps.newId ?? (() => crypto.randomUUID());
-    this.limiter = deps.limiter ?? createMemoryRateLimiter(10, 15 * 60 * 1000);
-    this.failureLimiter = deps.failureLimiter ?? createMemoryRateLimiter(50, 15 * 60 * 1000);
+    this.ipLimiter = deps.ipLimiter ?? createMemoryRateLimiter(20, 15 * 60 * 1000);
+    this.failureLimiter = deps.failureLimiter ?? createMemoryRateLimiter(10, 15 * 60 * 1000);
     this.dummyHash = deps.hasher.hash("teamboard-dummy-password");
   }
 
   async register(input: unknown, client: ClientInfo = {}): Promise<SignedIn> {
     const data = parseInput(registerSchema, input);
-    this.throttle("register", data.email, client);
+    this.throttleIp(client);
     if (await this.deps.users.findByEmail(data.email)) {
       // Neutral wording: does not confirm that the email is registered.
       throw new AppError("validation", REGISTER_FAILED, { email: [REGISTER_FAILED] });
@@ -73,29 +71,29 @@ export class AuthService {
   }
 
   async login(input: unknown, client: ClientInfo = {}): Promise<SignedIn> {
+    // The schema trims and lowercases the email, so every key below uses the normalised form.
     const data = parseInput(loginSchema, input);
-    this.throttle("login", data.email, client);
+    this.throttleIp(client);
+    const emailKey = `login:email:${data.email}`;
+    // While an email is over its failure limit, every attempt gets the same answer, right password or not.
+    // A production build would pair this with an email unlock link or a CAPTCHA.
+    if (this.failureLimiter.isLimited(emailKey)) throw tooMany();
     const user = await this.deps.users.findByEmail(data.email);
     // Always run one verify, against a dummy hash when the email is unknown, so response time
     // doesn't reveal whether an account exists. Same message for both failures, too.
     const stored = user?.passwordHash ?? (await this.dummyHash);
     const ok = await this.deps.hasher.verify(data.password, stored);
     if (!user || !ok) {
-      // Per-email counting happens only after a failed verify, and only turns failures into 429s: someone
-      // hammering an email from many IPs gets throttled, but the real owner with the right password still
-      // signs in. Hard blocking is keyed on (email, IP) and IP, so an attacker can't lock a user out.
-      if (!this.failureLimiter.hit(`login:email:${data.email}`)) throw tooMany();
+      this.failureLimiter.hit(emailKey);
       throw new AppError("unauthorized", "Email or password is incorrect");
     }
-    this.limiter.reset(pairKey("login", data.email, client));
+    this.failureLimiter.reset(emailKey);
     return this.startSession(toUser(user));
   }
 
-  private throttle(action: string, email: string, client: ClientInfo): void {
-    // Hit both keys (no short-circuit) so each counter advances on every attempt.
-    const byPair = this.limiter.hit(pairKey(action, email, client));
-    const byIp = client.ip ? this.limiter.hit(`${action}:ip:${client.ip}`) : true;
-    if (!byPair || !byIp) throw tooMany();
+  /** Checked first, so a blocked request creates no other limiter keys. No IP (local dev) means no IP limit. */
+  private throttleIp(client: ClientInfo): void {
+    if (client.ip && !this.ipLimiter.hit(`ip:${client.ip}`)) throw tooMany();
   }
 
   /** Returns the user for a session token, or null if missing, unknown or expired. */

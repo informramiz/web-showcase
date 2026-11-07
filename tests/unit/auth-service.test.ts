@@ -10,28 +10,28 @@ function fakes() {
   const users = new Map<string, UserRecord>();
   const sessions = new Map<string, SessionRecord>();
   const userRepo: UserRepository = {
-    findByEmail: async (email) => [...users.values()].find((u) => u.email === email) ?? null,
-    findById: async (id) => users.get(id) ?? null,
-    findManyByIds: async (ids) => ids.flatMap((id) => (users.has(id) ? [users.get(id)!] : [])),
-    insert: async (u) => void users.set(u.id, u),
+    findByEmail: (email) => Promise.resolve([...users.values()].find((u) => u.email === email) ?? null),
+    findById: (id) => Promise.resolve(users.get(id) ?? null),
+    findManyByIds: (ids) => Promise.resolve(ids.flatMap((id) => (users.has(id) ? [users.get(id)!] : []))),
+    insert: (u) => Promise.resolve(void users.set(u.id, u)),
   };
   const sessionRepo: SessionRepository = {
-    insert: async (s) => void sessions.set(s.id, s),
-    findById: async (id) => sessions.get(id) ?? null,
-    updateExpiry: async (id, expiresAt) => void sessions.set(id, { ...sessions.get(id)!, expiresAt }),
-    delete: async (id) => void sessions.delete(id),
+    insert: (s) => Promise.resolve(void sessions.set(s.id, s)),
+    findById: (id) => Promise.resolve(sessions.get(id) ?? null),
+    updateExpiry: (id, expiresAt) => Promise.resolve(void sessions.set(id, { ...sessions.get(id)!, expiresAt })),
+    delete: (id) => Promise.resolve(void sessions.delete(id)),
   };
   return { users, sessions, userRepo, sessionRepo };
 }
 
-function service(now: { t: number }, hasher: PasswordHasher = plainHasher, limit = 100, failLimit = 100) {
+function service(now: { t: number }, hasher: PasswordHasher = plainHasher, ipLimit = 100, failLimit = 100) {
   const f = fakes();
   let n = 0;
   const auth = new AuthService({
     users: f.userRepo,
     sessions: f.sessionRepo,
     hasher,
-    limiter: createMemoryRateLimiter(limit, 60_000, () => now.t),
+    ipLimiter: createMemoryRateLimiter(ipLimit, 60_000, () => now.t),
     failureLimiter: createMemoryRateLimiter(failLimit, 60_000, () => now.t),
     now: () => new Date(now.t),
     newId: () => `u${++n}`,
@@ -66,7 +66,7 @@ describe("AuthService", () => {
   it("runs exactly one password verify whether or not the email exists", async () => {
     const verified: string[] = [];
     const spy: PasswordHasher = {
-      hash: plainHasher.hash,
+      hash: (p) => plainHasher.hash(p),
       verify: async (p, stored) => {
         verified.push(stored);
         return plainHasher.verify(p, stored);
@@ -80,48 +80,57 @@ describe("AuthService", () => {
     expect(verified).toEqual(["plain$teamboard-dummy-password", "plain$password1"]);
   });
 
-  it("hard-limits login per (email, IP) pair and resets the pair on success", async () => {
+  it("blocks an email after repeated failures, even with the right password, until the window ends", async () => {
     const clock = { t: 0 };
-    const { auth } = service(clock, plainHasher, 2);
-    await auth.register(input);
-    const from = { ip: "1.1.1.1" };
-    const bad = { email: input.email, password: "nope" };
-    await expect(auth.login(bad, from)).rejects.toMatchObject({ kind: "unauthorized" });
-    await expect(auth.login(bad, from)).rejects.toMatchObject({ kind: "unauthorized" });
-    await expect(auth.login(bad, from)).rejects.toMatchObject({ kind: "rate_limited" });
-    clock.t = 60_000;
-    await auth.login({ email: input.email, password: input.password }, from);
-    await expect(auth.login(bad, from)).rejects.toMatchObject({ kind: "unauthorized" });
-  });
-
-  it("does not let an attacker lock out the real user from another IP", async () => {
-    const { auth } = service({ t: 0 }, plainHasher, 2, 3);
+    const { auth } = service(clock, plainHasher, 100, 2);
     await auth.register(input);
     const bad = { email: input.email, password: "nope" };
-    for (let i = 0; i < 5; i++) await expect(auth.login(bad, { ip: "6.6.6.6" })).rejects.toBeDefined();
-    // Attacker is now throttled, but the owner on their own IP still signs in.
-    await expect(auth.login(bad, { ip: "6.6.6.6" })).rejects.toMatchObject({ kind: "rate_limited" });
-    const ok = await auth.login({ email: input.email, password: input.password }, { ip: "7.7.7.7" });
-    expect(ok.user.email).toBe(input.email);
-  });
-
-  it("counts per-email failures across IPs and only after a failed verify", async () => {
-    const { auth } = service({ t: 0 }, plainHasher, 100, 2);
-    await auth.register(input);
-    // Successful logins don't count towards the per-email limit.
-    for (let i = 0; i < 3; i++) await auth.login({ email: input.email, password: input.password }, { ip: `3.0.0.${i}` });
-    const bad = { email: input.email, password: "nope" };
+    // Failures come from different IPs: the per-email limit spans all of them.
     await expect(auth.login(bad, { ip: "4.0.0.1" })).rejects.toMatchObject({ kind: "unauthorized" });
     await expect(auth.login(bad, { ip: "4.0.0.2" })).rejects.toMatchObject({ kind: "unauthorized" });
+    const good = { email: input.email, password: input.password };
     await expect(auth.login(bad, { ip: "4.0.0.3" })).rejects.toMatchObject({ kind: "rate_limited" });
+    await expect(auth.login(good, { ip: "5.0.0.1" })).rejects.toMatchObject({ kind: "rate_limited" });
+    // Keys use the normalised email, so case and spaces don't get around it.
+    await expect(auth.login({ ...good, email: "  DANA@Test.dev " })).rejects.toMatchObject({ kind: "rate_limited" });
+    clock.t = 60_000;
+    await expect(auth.login(good)).resolves.toMatchObject({ user: { email: input.email } });
   });
 
-  it("caps attempts per IP across different emails", async () => {
-    const { auth } = service({ t: 0 }, plainHasher, 2);
+  it("counts only failures per email, and a success clears them", async () => {
+    const { auth } = service({ t: 0 }, plainHasher, 100, 2);
+    await auth.register(input);
+    const good = { email: input.email, password: input.password };
+    const bad = { email: input.email, password: "nope" };
+    for (let i = 0; i < 3; i++) await auth.login(good);
+    await expect(auth.login(bad)).rejects.toMatchObject({ kind: "unauthorized" });
+    await auth.login(good);
+    await expect(auth.login(bad)).rejects.toMatchObject({ kind: "unauthorized" });
+    await expect(auth.login(bad)).rejects.toMatchObject({ kind: "unauthorized" });
+    await expect(auth.login(bad)).rejects.toMatchObject({ kind: "rate_limited" });
+  });
+
+  it("caps all attempts per IP, and a blocked request creates no per-email keys", async () => {
+    const failures = createMemoryRateLimiter(100, 60_000, () => 0);
+    const f = fakes();
+    const auth = new AuthService({
+      users: f.userRepo,
+      sessions: f.sessionRepo,
+      hasher: plainHasher,
+      ipLimiter: createMemoryRateLimiter(2, 60_000, () => 0),
+      failureLimiter: failures,
+    });
     const ip = { ip: "9.9.9.9" };
     await expect(auth.login({ email: "a@test.dev", password: "x" }, ip)).rejects.toMatchObject({ kind: "unauthorized" });
     await expect(auth.login({ email: "b@test.dev", password: "x" }, ip)).rejects.toMatchObject({ kind: "unauthorized" });
     await expect(auth.login({ email: "c@test.dev", password: "x" }, ip)).rejects.toMatchObject({ kind: "rate_limited" });
+    // The blocked attempt for c never reached the failure counter.
+    for (let i = 0; i < 99; i++) failures.hit("login:email:c@test.dev");
+    expect(failures.isLimited("login:email:c@test.dev")).toBe(false);
+    // Another IP is unaffected.
+    await expect(auth.login({ email: "c@test.dev", password: "x" }, { ip: "8.8.8.8" })).rejects.toMatchObject({
+      kind: "unauthorized",
+    });
   });
 
   it("rate limits registration per IP", async () => {
