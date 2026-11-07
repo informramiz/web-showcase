@@ -40,3 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 data/
+
+# playwright / cloudflare
+/test-results/
+/playwright-report/
+/.open-next/
+/.wrangler/

@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   // and are not yet supported by the OpenNext Cloudflare adapter.
   serverExternalPackages: ["better-sqlite3"],
   turbopack: {
+    root: import.meta.dirname,
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
