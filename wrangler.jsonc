@@ -1,7 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "teamboard-showcase",
-  "main": ".open-next/worker.js",
+  // Custom entry: wraps the OpenNext handler and exports the ProjectRoom Durable Object.
+  "main": "worker/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
@@ -20,6 +21,12 @@
       "migrations_dir": "drizzle",
     },
   ],
+  "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "teamboard-attachments" }],
+  "durable_objects": {
+    "bindings": [{ "name": "PROJECT_ROOM", "class_name": "ProjectRoom" }],
+  },
+  // SQLite-backed Durable Objects (recommended for new classes); applied automatically on deploy.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ProjectRoom"] }],
   "vars": { "DB_DRIVER": "d1" },
   "observability": { "enabled": true },
 }

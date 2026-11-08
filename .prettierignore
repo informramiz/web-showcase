@@ -9,3 +9,4 @@ playwright-report
 test-results
 package-lock.json
 next-env.d.ts
+worker/worker-configuration.d.ts

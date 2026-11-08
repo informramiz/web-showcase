@@ -13,7 +13,8 @@ import { CommentService } from "@/features/comments/domain/comment-service";
 import { createCommentRepository } from "@/features/comments/data/drizzle-comment-repository";
 import { ProjectService } from "@/features/projects/domain/project-service";
 import { createProjectRepository } from "@/features/projects/data/drizzle-project-repository";
-import { noopEvents, type ProjectEvents } from "@/features/realtime/domain/types";
+import { RealtimeService } from "@/features/realtime/domain/realtime-service";
+import { noopEvents, type ProjectEvents, type RealtimeTransport } from "@/features/realtime/domain/types";
 import { TaskService } from "@/features/tasks/domain/task-service";
 import { createTaskRepository } from "@/features/tasks/data/drizzle-task-repository";
 
@@ -24,12 +25,15 @@ export interface Container {
   comments: CommentService;
   activity: ActivityService;
   attachments: AttachmentService;
+  realtime: RealtimeService;
 }
 
 /** Adapters that differ between Cloudflare, local dev and tests. Everything else is built from the database. */
 export interface ContainerOptions {
   hasher?: PasswordHasher;
   events?: ProjectEvents;
+  /** How browsers receive events. Defaults to polling, which needs nothing from the platform. */
+  transport?: RealtimeTransport;
   /** File bytes. Defaults to memory, which suits tests; the runtime passes R2 or a local folder. */
   storage?: AttachmentStorage;
 }
@@ -64,5 +68,6 @@ export function createContainer(db: Db, options: ContainerOptions = {}): Contain
     projectService: projects,
     activity,
   });
-  return { auth, projects, tasks, comments, activity, attachments };
+  const realtime = new RealtimeService({ projectService: projects, transport: options.transport ?? { kind: "poll" } });
+  return { auth, projects, tasks, comments, activity, attachments, realtime };
 }

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Role } from "@/features/projects/domain/types";
+import { RealtimeBadge } from "@/features/realtime/ui/realtime-badge";
+import { useProjectEvents } from "@/features/realtime/ui/use-project-events";
 import { STATUS_LABEL, TASK_STATUSES, type TaskJson, type TaskStatus } from "../domain/types";
 import { Board } from "./board";
 import { useCreateTask, useDeleteTask, useTasks, useUpdateTask } from "./hooks";
@@ -50,6 +52,7 @@ export function TaskWorkspace({ projectId, members, role, currentUserId }: Props
       : { search, assigneeId, status: status || undefined, page, pageSize: LIST_PAGE_SIZE };
   const { data, isPending, isError, error, isFetching } = useTasks(projectId, query);
 
+  const realtime = useProjectEvents(projectId, currentUserId);
   const create = useCreateTask(projectId, currentUserId);
   const update = useUpdateTask(projectId);
   const remove = useDeleteTask(projectId);
@@ -153,7 +156,8 @@ export function TaskWorkspace({ projectId, members, role, currentUserId }: Props
             ))}
           </select>
         )}
-        <div className="ml-auto flex rounded-md border border-border bg-surface p-0.5 text-sm" role="tablist">
+        <RealtimeBadge status={realtime} />
+        <div className="flex rounded-md border border-border bg-surface p-0.5 text-sm" role="tablist">
           {(["board", "list"] as const).map((v) => (
             <button
               key={v}

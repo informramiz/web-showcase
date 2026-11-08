@@ -2,4 +2,7 @@
 interface CloudflareEnv {
   DB: unknown;
   ATTACHMENTS: unknown;
+  PROJECT_ROOM: unknown;
+  /** Secret (wrangler secret put). Signs WebSocket tickets; absent means polling. */
+  REALTIME_SECRET?: string;
 }
