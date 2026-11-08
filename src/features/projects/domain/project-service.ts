@@ -1,6 +1,7 @@
 import { AppError } from "@/core/errors";
 import { parseInput } from "@/core/validation";
 import type { User, UserRepository } from "@/features/auth/domain/types";
+import { noopEvents, type ProjectEvents } from "@/features/realtime/domain/types";
 import { can, type ProjectAction } from "./permissions";
 import { addMemberSchema, createProjectSchema, updateProjectSchema } from "./schemas";
 import type { Member, Project, ProjectDetail, ProjectRepository, ProjectSummary, Role } from "./types";
@@ -8,6 +9,8 @@ import type { Member, Project, ProjectDetail, ProjectRepository, ProjectSummary,
 export interface ProjectDeps {
   projects: ProjectRepository;
   users: UserRepository;
+  /** Live-connection port; removing a member closes their sockets. */
+  events?: Pick<ProjectEvents, "revoke">;
   now?: () => Date;
   newId?: () => string;
 }
@@ -79,5 +82,22 @@ export class ProjectService {
     if (!role) throw new AppError("not_found", "Not a member");
     if (role === "owner") throw new AppError("validation", "The owner can't be removed");
     await this.deps.projects.removeMember(projectId, userId);
+    await revokeQuietly(this.deps.events ?? noopEvents, projectId, userId);
+  }
+}
+
+/**
+ * Membership is already gone, so the realtime room's own ticket check would refuse a reconnect; closing open
+ * sockets is the extra step. A failure is logged, not thrown: the removal itself succeeded.
+ */
+export async function revokeQuietly(
+  events: Pick<ProjectEvents, "revoke">,
+  projectId: string,
+  userId: string,
+): Promise<void> {
+  try {
+    await events.revoke(projectId, userId);
+  } catch (e) {
+    console.error("realtime revoke failed", { projectId, userId, error: e });
   }
 }

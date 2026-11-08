@@ -11,7 +11,7 @@ import type { PasswordHasher } from "@/features/auth/domain/types";
 import { createSessionRepository, createUserRepository } from "@/features/auth/data/drizzle-auth-repositories";
 import { CommentService } from "@/features/comments/domain/comment-service";
 import { createCommentRepository } from "@/features/comments/data/drizzle-comment-repository";
-import { ProjectService } from "@/features/projects/domain/project-service";
+import { ProjectService, revokeQuietly } from "@/features/projects/domain/project-service";
 import { createProjectRepository } from "@/features/projects/data/drizzle-project-repository";
 import { RealtimeService } from "@/features/realtime/domain/realtime-service";
 import { noopEvents, type ProjectEvents, type RealtimeTransport } from "@/features/realtime/domain/types";
@@ -43,16 +43,21 @@ export function createContainer(db: Db, options: ContainerOptions = {}): Contain
   const users = createUserRepository(db);
   const projectRepo = createProjectRepository(db);
   const taskRepo = createTaskRepository(db);
+  const events = options.events ?? noopEvents;
   const auth = new AuthService({
     users,
     sessions: createSessionRepository(db),
     hasher: options.hasher ?? createPbkdf2Hasher(),
+    // Signing out closes live sockets in every project; reconnecting needs a valid session for a new ticket.
+    onLogout: async (userId) => {
+      for (const p of await projectRepo.listForUser(userId)) await revokeQuietly(events, p.id, userId);
+    },
   });
-  const projects = new ProjectService({ projects: projectRepo, users });
+  const projects = new ProjectService({ projects: projectRepo, users, events });
   const activity = new ActivityService({
     activity: createActivityRepository(db),
     projectService: projects,
-    events: options.events ?? noopEvents,
+    events,
   });
   const tasks = new TaskService({ tasks: taskRepo, projects: projectRepo, projectService: projects, activity });
   const comments = new CommentService({

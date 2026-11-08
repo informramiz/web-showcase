@@ -4,6 +4,8 @@
 import { default as handler } from "../.open-next/worker.js";
 import { verifyTicket } from "../src/features/realtime/domain/ticket";
 
+import { TICKET_HEADERS } from "./project-room";
+
 export { ProjectRoom } from "./project-room";
 
 const REALTIME_PATH = /^\/realtime\/([^/]+)$/;
@@ -24,6 +26,11 @@ export default {
     const projectId = decodeURIComponent(match[1]);
     const claims = await verifyTicket(url.searchParams.get("ticket") ?? "", secret, projectId, Date.now());
     if (!claims) return new Response("Invalid ticket", { status: 401 });
-    return env.PROJECT_ROOM.getByName(projectId).fetch(request);
+    // Hand the verified claims to the room, which enforces single use and tags the socket with the user.
+    const headers = new Headers(request.headers);
+    headers.set(TICKET_HEADERS.userId, claims.userId);
+    headers.set(TICKET_HEADERS.jti, claims.jti);
+    headers.set(TICKET_HEADERS.exp, String(claims.exp));
+    return env.PROJECT_ROOM.getByName(projectId).fetch(new Request(request, { headers }));
   },
 } satisfies ExportedHandler<Env>;

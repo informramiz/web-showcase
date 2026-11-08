@@ -10,14 +10,17 @@ export interface RealtimeDeps {
   projectService: Pick<ProjectService, "authorize">;
   transport: RealtimeTransport;
   now?: () => number;
+  newId?: () => string;
 }
 
 /** Decides how a project member connects for live updates. Membership is checked here for every transport. */
 export class RealtimeService {
   private readonly now: () => number;
+  private readonly newId: () => string;
 
   constructor(private readonly deps: RealtimeDeps) {
     this.now = deps.now ?? (() => Date.now());
+    this.newId = deps.newId ?? (() => crypto.randomUUID());
   }
 
   async connection(actor: User, projectId: string): Promise<RealtimeConnection> {
@@ -27,7 +30,7 @@ export class RealtimeService {
     switch (transport.kind) {
       case "websocket": {
         const ticket = await signTicket(
-          { projectId, userId: actor.id, exp: this.now() + TICKET_TTL_MS },
+          { projectId, userId: actor.id, jti: this.newId(), exp: this.now() + TICKET_TTL_MS },
           transport.secret,
         );
         return { transport: "websocket", url: `/realtime/${path}?ticket=${encodeURIComponent(ticket)}` };

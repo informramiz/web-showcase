@@ -6,11 +6,14 @@
 export interface TicketClaims {
   projectId: string;
   userId: string;
+  /** Unique id; the project room admits each ticket once. */
+  jti: string;
   /** Expiry, epoch milliseconds. */
   exp: number;
 }
 
-export const TICKET_TTL_MS = 60_000;
+/** Only long enough to open the socket right after the API hands it out. */
+export const TICKET_TTL_MS = 30_000;
 
 const encoder = new TextEncoder();
 

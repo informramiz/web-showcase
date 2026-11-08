@@ -1,35 +1,45 @@
 import { DurableObject } from "cloudflare:workers";
+import { ProjectRoomCore } from "../src/features/realtime/data/project-room-core";
 import type { ProjectEvent } from "../src/features/realtime/domain/types";
+
+/** Headers the Worker sets after verifying the ticket. The Durable Object is not reachable from outside. */
+export const TICKET_HEADERS = { userId: "x-ticket-user", jti: "x-ticket-id", exp: "x-ticket-exp" } as const;
 
 /**
  * One instance per project (addressed by project id). Holds that project's browser sockets using the WebSocket
  * Hibernation API, so an idle room costs nothing: developers.cloudflare.com/durable-objects/best-practices/websockets/
  */
 export class ProjectRoom extends DurableObject<Env> {
+  private readonly room: ProjectRoomCore<WebSocket>;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.room = new ProjectRoomCore(ctx);
     // Answered by the runtime without waking the object.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
   }
 
-  /** The Worker has already verified the ticket; this only upgrades the connection. */
-  override fetch(): Response {
+  /** The Worker has verified the ticket's signature; this enforces single use and upgrades the connection. */
+  override async fetch(request: Request): Promise<Response> {
+    const userId = request.headers.get(TICKET_HEADERS.userId);
+    const jti = request.headers.get(TICKET_HEADERS.jti);
+    const exp = Number(request.headers.get(TICKET_HEADERS.exp));
+    if (!userId || !jti || !Number.isFinite(exp)) return new Response("Bad request", { status: 400 });
+    if (!(await this.room.admit({ jti, exp }, Date.now()))) return new Response("Ticket already used", { status: 401 });
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
-    this.ctx.acceptWebSocket(server);
+    this.ctx.acceptWebSocket(server, this.room.tagsFor(userId));
     return new Response(null, { status: 101, webSocket: client });
   }
 
   /** RPC from the Next.js app whenever activity is recorded in this project. */
   broadcast(event: ProjectEvent): void {
-    const message = JSON.stringify(event);
-    for (const socket of this.ctx.getWebSockets()) {
-      try {
-        socket.send(message);
-      } catch {
-        // A socket closing mid-send is not an error for the others.
-      }
-    }
+    this.room.broadcast(event);
+  }
+
+  /** RPC: close a user's sockets after they leave the project or sign out. */
+  revoke(userId: string): void {
+    this.room.revoke(userId);
   }
 
   /** Clients only listen; anything other than the auto-answered ping is ignored. */

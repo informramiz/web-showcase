@@ -31,12 +31,16 @@ describe("memory event bus", () => {
 });
 
 describe("durable object events", () => {
-  it("publishes through the project's room stub", async () => {
+  it("publishes and revokes through the project's room stub", async () => {
     const broadcast = vi.fn(() => Promise.resolve());
-    const getByName = vi.fn(() => ({ broadcast }));
-    await createDurableObjectEvents({ getByName }).publish("p1", event("u"));
-    expect(getByName).toHaveBeenCalledWith("p1");
+    const revoke = vi.fn(() => Promise.resolve());
+    const getByName = vi.fn(() => ({ broadcast, revoke }));
+    const events = createDurableObjectEvents({ getByName });
+    await events.publish("p1", event("u"));
+    await events.revoke("p2", "u9");
+    expect(getByName.mock.calls).toEqual([["p1"], ["p2"]]);
     expect(broadcast).toHaveBeenCalledWith(event("u"));
+    expect(revoke).toHaveBeenCalledWith("u9");
   });
 });
 
@@ -61,6 +65,15 @@ describe("RealtimeService", () => {
     expect(url.pathname).toBe(`/realtime/${w.projectId}`);
     const claims = await verifyTicket(url.searchParams.get("ticket")!, "s3cret", w.projectId);
     expect(claims).toMatchObject({ projectId: w.projectId, userId: w.member.id });
+    // Each ticket gets its own id, so the room can admit it once.
+    const again = await w.c.realtime.connection(w.member, w.projectId);
+    if (again.transport !== "websocket") throw new Error("expected websocket");
+    const second = await verifyTicket(
+      new URL(again.url, "http://x").searchParams.get("ticket")!,
+      "s3cret",
+      w.projectId,
+    );
+    expect(second!.jti).not.toBe(claims!.jti);
   });
 
   it("streams recorded activity to SSE subscribers", async () => {
@@ -122,5 +135,46 @@ describe("realtime routes", () => {
     const ctx = { params: Promise.resolve({ projectId: w.projectId }) };
     const res = await eventsRoute.GET(get(`/api/projects/${w.projectId}/events`, await login(w)), ctx);
     expect(res.status).toBe(404);
+  });
+});
+
+describe("revocation", () => {
+  const recorder = () => {
+    const revoked: [string, string][] = [];
+    return {
+      revoked,
+      events: {
+        publish: () => Promise.resolve(),
+        revoke: (projectId: string, userId: string) => Promise.resolve(void revoked.push([projectId, userId])),
+      },
+    };
+  };
+
+  it("closes a removed member's live sockets", async () => {
+    const r = recorder();
+    const w = await makeWorld({ events: r.events });
+    await w.c.projects.removeMember(w.owner, w.projectId, w.member.id);
+    expect(r.revoked).toEqual([[w.projectId, w.member.id]]);
+  });
+
+  it("closes a user's sockets in every project on logout", async () => {
+    const r = recorder();
+    const w = await makeWorld({ events: r.events });
+    const second = await w.c.projects.create(w.owner, { name: "Beta" });
+    const { token } = await w.c.auth.login({ email: w.owner.email, password: "password1" });
+    await w.c.auth.logout(token);
+    expect(r.revoked.map(([p]) => p).sort()).toEqual([w.projectId, second.id].sort());
+    expect(r.revoked.every(([, u]) => u === w.owner.id)).toBe(true);
+  });
+
+  it("still removes the member when revocation fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const w = await makeWorld({
+      events: { publish: () => Promise.resolve(), revoke: () => Promise.reject(new Error("room down")) },
+    });
+    await w.c.projects.removeMember(w.owner, w.projectId, w.member.id);
+    expect((await w.c.projects.get(w.owner, w.projectId)).members).toHaveLength(1);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
   });
 });

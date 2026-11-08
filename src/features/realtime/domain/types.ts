@@ -12,9 +12,11 @@ export interface ProjectEvent {
 /** Outbound port: fan an event out to the project's open connections (Durable Object on Workers, SSE locally). */
 export interface ProjectEvents {
   publish(projectId: string, event: ProjectEvent): Promise<void>;
+  /** Drops a user's open live connections to a project (removed from it, or signed out). */
+  revoke(projectId: string, userId: string): Promise<void>;
 }
 
-export const noopEvents: ProjectEvents = { publish: () => Promise.resolve() };
+export const noopEvents: ProjectEvents = { publish: () => Promise.resolve(), revoke: () => Promise.resolve() };
 
 export type Unsubscribe = () => void;
 

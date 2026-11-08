@@ -11,6 +11,8 @@ export function createMemoryEventBus(): ProjectEvents & ProjectEventSubscriber {
       for (const listener of listeners.get(projectId) ?? []) listener(event);
       return Promise.resolve();
     },
+    // Local dev only; SSE re-authorizes on every reconnect, so revocation is not modelled here.
+    revoke: () => Promise.resolve(),
     subscribe(projectId, listener) {
       const set = listeners.get(projectId) ?? new Set();
       set.add(listener);

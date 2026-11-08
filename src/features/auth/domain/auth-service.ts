@@ -16,6 +16,8 @@ export interface AuthDeps {
   failureLimiter?: RateLimiter;
   now?: () => Date;
   newId?: () => string;
+  /** Runs after a session ends, e.g. to close the user's realtime sockets. */
+  onLogout?: (userId: string) => Promise<void>;
 }
 
 /** Who is asking; used only for rate limiting. */
@@ -114,7 +116,11 @@ export class AuthService {
   }
 
   async logout(token: string | undefined): Promise<void> {
-    if (token) await this.deps.sessions.delete(await sha256Hex(token));
+    if (!token) return;
+    const id = await sha256Hex(token);
+    const session = await this.deps.sessions.findById(id);
+    await this.deps.sessions.delete(id);
+    if (session) await this.deps.onLogout?.(session.userId);
   }
 
   private async startSession(user: User): Promise<SignedIn> {

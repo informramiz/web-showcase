@@ -86,6 +86,7 @@ describe("activity log", () => {
           published.push([projectId, e]);
           return e.action === "task.updated" ? Promise.reject(new Error("socket down")) : Promise.resolve();
         },
+        revoke: () => Promise.resolve(),
       },
     });
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
