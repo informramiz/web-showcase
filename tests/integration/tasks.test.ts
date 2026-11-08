@@ -44,9 +44,28 @@ describe("TaskService + SQLite", () => {
     expect((await w.c.tasks.list(w.member, w.projectId, { assigneeId: "unassigned" })).total).toBe(5);
     expect((await w.c.tasks.list(w.member, w.projectId, { search: "LOGIN" })).items[0]?.title).toBe("Fix login bug");
     expect((await w.c.tasks.list(w.member, w.projectId, { search: "submit" })).total).toBe(1);
-    // % is matched literally, not as a wildcard.
-    expect((await w.c.tasks.list(w.member, w.projectId, { search: "50%" })).total).toBe(1);
+    // Punctuation is a separator, never FTS5 syntax or a LIKE wildcard; "50" is a prefix, so "500" matches too.
+    expect((await w.c.tasks.list(w.member, w.projectId, { search: "50%" })).total).toBe(2);
     expect((await w.c.tasks.list(w.member, w.projectId, { search: "5%0" })).total).toBe(0);
+  });
+
+  it("full-text search: prefixes, word order, operators as text, and the index follows edits", async () => {
+    const t = await create("Migrate billing webhooks", { description: "Stripe signature checks" });
+    await create("Write docs");
+    const search = async (q: string) => (await w.c.tasks.list(w.member, w.projectId, { search: q })).items;
+
+    expect((await search("migr")).map((x) => x.title)).toEqual(["Migrate billing webhooks"]);
+    expect(await search("webhooks billing")).toHaveLength(1);
+    expect(await search("stripe sig")).toHaveLength(1);
+    expect(await search('docs" (')).toHaveLength(1);
+    expect(await search("%%%")).toHaveLength(0);
+
+    await w.c.tasks.update(w.member, w.projectId, t.id, { title: "Rotate API keys" });
+    expect(await search("billing")).toHaveLength(0);
+    expect(await search("rotate")).toHaveLength(1);
+
+    await w.c.tasks.delete(w.owner, w.projectId, t.id);
+    expect(await search("rotate")).toHaveLength(0);
   });
 
   it("moves a task to the bottom of another column", async () => {

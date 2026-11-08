@@ -1,10 +1,8 @@
-import { and, asc, count, eq, isNull, max, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, isNull, max, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/db/types";
 import { tasks } from "@/db/schema";
 import type { TaskFilter, TaskRepository } from "../domain/types";
-
-/** Escapes LIKE wildcards so a search for "50%" matches the literal text. */
-const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+import { toFtsQuery } from "./fts-query";
 
 const statusOrder = sql`case ${tasks.status} when 'todo' then 0 when 'in_progress' then 1 else 2 end`;
 
@@ -14,10 +12,10 @@ function whereFor(projectId: string, f: TaskFilter): SQL | undefined {
   if (f.assigneeId === "unassigned") conds.push(isNull(tasks.assigneeId));
   else if (f.assigneeId) conds.push(eq(tasks.assigneeId, f.assigneeId));
   if (f.search) {
-    // SQLite LIKE is case-insensitive for ASCII.
-    const pattern = `%${escapeLike(f.search)}%`;
+    // tasks_fts is kept in sync by triggers (drizzle/0001_tasks_fts.sql). The MATCH is bound as a parameter.
+    const match = toFtsQuery(f.search);
     conds.push(
-      or(sql`${tasks.title} like ${pattern} escape '\\'`, sql`${tasks.description} like ${pattern} escape '\\'`),
+      match === null ? sql`0` : sql`${tasks.id} in (select task_id from tasks_fts where tasks_fts match ${match})`,
     );
   }
   return and(...conds);
