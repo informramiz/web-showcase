@@ -1,6 +1,8 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { taskKeys } from "@/features/tasks/ui/queries";
 import { FormError } from "@/components/field";
 import type { ActionState } from "@/server/action-state";
 import type { Member, Role } from "../domain/types";
@@ -11,6 +13,7 @@ export function MembersPanel({ projectId, members, role }: { projectId: string; 
   const [state, action, pending] = useActionState<ActionState, FormData>(addMemberAction.bind(null, projectId), {});
   const [removing, startRemove] = useTransition();
   const [removeError, setRemoveError] = useState<string>();
+  const queryClient = useQueryClient();
   const isOwner = role === "owner";
 
   return (
@@ -32,7 +35,10 @@ export function MembersPanel({ projectId, members, role }: { projectId: string; 
                 disabled={removing}
                 onClick={() =>
                   startRemove(async () => {
-                    setRemoveError((await removeMemberAction(projectId, m.id)).error);
+                    const result = await removeMemberAction(projectId, m.id);
+                    setRemoveError(result.error);
+                    // Assignees on cached tasks may have changed, so refetch the board.
+                    if (result.ok) await queryClient.invalidateQueries({ queryKey: taskKeys.project(projectId) });
                   })
                 }
                 aria-label={`Remove ${m.name}`}

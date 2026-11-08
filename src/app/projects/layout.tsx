@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { logoutAction } from "@/features/auth/server/actions";
+import { SignOutButton } from "@/features/auth/ui/sign-out-button";
 import { requireUser } from "@/features/auth/server/session";
 import { Avatar } from "@/components/avatar";
 
@@ -16,9 +16,7 @@ export default async function ProjectsLayout({ children }: LayoutProps<"/project
           <div className="ml-auto flex items-center gap-3">
             <Avatar name={user.name} size="sm" />
             <span className="hidden text-sm sm:inline">{user.name}</span>
-            <form action={logoutAction}>
-              <button className="btn-ghost py-1.5">Sign out</button>
-            </form>
+            <SignOutButton />
           </div>
         </div>
       </header>

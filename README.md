@@ -220,6 +220,6 @@ For `npm run preview`, apply migrations and the seed locally first (the same com
 - **No transactions.** D1 doesn't support interactive ones, so the code avoids needing them: positions are fractional and every write is one statement.
 - **Drag and drop is HTML5 with a select fallback.** No drag library. Touch screens don't fire HTML5 drag events, so each card has a "Move" select, which also covers keyboard users.
 - **`proxy.ts` only checks that a cookie exists.** It saves a render for signed-out visitors and refreshes the cookie expiry, but never touches the database. The session is validated in the DAL on every page, action and API call.
-- **Shared browser QueryClient.** One client per tab, as the guides recommend. Signing out is a full redirect through a Server Action; a production app with sensitive data would also call `queryClient.clear()` on sign-out.
+- **Shared browser QueryClient.** One client per tab, as the guides recommend. Sign-out clears it before the Server Action redirects, and removing a member invalidates the cached board, so no stale data survives either.
 - **Fixed-window rate limiting, in memory.** Simple and testable. It is the part a real deploy replaces first (see Security).
 - **No email delivery.** Members are added by the email of an existing account. Invites, password reset and email verification would need a mail provider.
