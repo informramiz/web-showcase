@@ -42,6 +42,19 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           {isLogin ? "Create an account" : "Sign in"}
         </Link>
       </p>
+      {isLogin && (
+        <>
+          <div className="flex items-center gap-3 text-xs text-muted">
+            <span className="h-px flex-1 bg-border" />
+            or
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <a href="/api/demo" className="btn-ghost w-full">
+            Explore the live demo
+          </a>
+          <p className="text-center text-xs text-muted">No sign-up — jump straight into a populated workspace.</p>
+        </>
+      )}
     </form>
   );
 }

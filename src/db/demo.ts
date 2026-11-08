@@ -1,6 +1,7 @@
 import type { Container } from "@/server/container";
 
 export const DEMO_PASSWORD = "demo1234";
+export const DEMO_EMAIL = "demo@teamboard.dev";
 const DEMO_USERS = [
   { name: "Dana Demo", email: "demo@teamboard.dev" },
   { name: "Sam Rivera", email: "sam@teamboard.dev" },
