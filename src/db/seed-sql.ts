@@ -10,7 +10,7 @@ import { seedDemo } from "./demo";
 import { openSqlite } from "./sqlite";
 
 // Parents last for deletes, first for inserts. Sessions are cleared, not copied.
-const TABLES = ["users", "projects", "project_members", "tasks", "comments", "activity"] as const;
+const TABLES = ["users", "projects", "project_members", "tasks", "comments", "activity", "attachments"] as const;
 
 const literal = (v: unknown): string => {
   if (v === null || v === undefined) return "NULL";

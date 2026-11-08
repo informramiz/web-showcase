@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { describeActivity } from "@/features/activity/domain/describe";
 import { STATUS_LABEL } from "../domain/types";
+import { AttachmentsSection } from "./attachments-section";
 import { useAddComment, useTaskDetail } from "./hooks";
 import type { MemberRef } from "./task-card";
 
@@ -11,13 +12,15 @@ interface Props {
   projectId: string;
   taskId: string;
   members: Map<string, MemberRef>;
+  currentUserId: string;
+  isOwner: boolean;
   onClose: () => void;
 }
 
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-/** Side panel with a task's description, comments and audit trail. */
-export function TaskDetail({ projectId, taskId, members, onClose }: Props) {
+/** Side panel with a task's description, files, comments and audit trail. */
+export function TaskDetail({ projectId, taskId, members, currentUserId, isOwner, onClose }: Props) {
   const { data, isPending, isError, error } = useTaskDetail(projectId, taskId);
   const addComment = useAddComment(projectId, taskId);
   const [body, setBody] = useState("");
@@ -61,6 +64,13 @@ export function TaskDetail({ projectId, taskId, members, onClose }: Props) {
               </p>
               {data.task.description && <p className="whitespace-pre-wrap">{data.task.description}</p>}
             </div>
+
+            <AttachmentsSection
+              projectId={projectId}
+              taskId={taskId}
+              attachments={data.attachments}
+              canDelete={(a) => isOwner || a.uploaderId === currentUserId}
+            />
 
             <section className="space-y-3">
               <h3 className="text-sm font-semibold">Comments</h3>

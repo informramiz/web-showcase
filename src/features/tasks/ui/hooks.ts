@@ -90,3 +90,20 @@ export function useAddComment(projectId: string, taskId: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: taskKeys.detail(projectId, taskId) }),
   });
 }
+
+/** Upload and delete refresh the detail panel, which lists the files and the activity entries they create. */
+export function useUploadAttachment(projectId: string, taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => tasksApi.upload(projectId, taskId, file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: taskKeys.detail(projectId, taskId) }),
+  });
+}
+
+export function useDeleteAttachment(projectId: string, taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (attachmentId: string) => tasksApi.removeAttachment(projectId, taskId, attachmentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: taskKeys.detail(projectId, taskId) }),
+  });
+}

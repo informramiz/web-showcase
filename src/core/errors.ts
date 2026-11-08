@@ -1,4 +1,5 @@
-export type AppErrorKind = "validation" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "rate_limited";
+export type AppErrorKind =
+  "validation" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "too_large" | "rate_limited";
 
 const STATUS: Record<AppErrorKind, number> = {
   validation: 400,
@@ -6,6 +7,7 @@ const STATUS: Record<AppErrorKind, number> = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
+  too_large: 413,
   rate_limited: 429,
 };
 

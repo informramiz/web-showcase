@@ -1,6 +1,10 @@
 import type { Db } from "@/db/types";
 import { ActivityService } from "@/features/activity/domain/activity-service";
 import { createActivityRepository } from "@/features/activity/data/drizzle-activity-repository";
+import { AttachmentService } from "@/features/attachments/domain/attachment-service";
+import type { AttachmentStorage } from "@/features/attachments/domain/types";
+import { createAttachmentRepository } from "@/features/attachments/data/drizzle-attachment-repository";
+import { createMemoryStorage } from "@/features/attachments/data/memory-storage";
 import { AuthService } from "@/features/auth/domain/auth-service";
 import { createPbkdf2Hasher } from "@/features/auth/domain/crypto";
 import type { PasswordHasher } from "@/features/auth/domain/types";
@@ -19,12 +23,15 @@ export interface Container {
   tasks: TaskService;
   comments: CommentService;
   activity: ActivityService;
+  attachments: AttachmentService;
 }
 
 /** Adapters that differ between Cloudflare, local dev and tests. Everything else is built from the database. */
 export interface ContainerOptions {
   hasher?: PasswordHasher;
   events?: ProjectEvents;
+  /** File bytes. Defaults to memory, which suits tests; the runtime passes R2 or a local folder. */
+  storage?: AttachmentStorage;
 }
 
 /** Composition root: the only place that knows which implementation backs each port. */
@@ -50,5 +57,12 @@ export function createContainer(db: Db, options: ContainerOptions = {}): Contain
     projectService: projects,
     activity,
   });
-  return { auth, projects, tasks, comments, activity };
+  const attachments = new AttachmentService({
+    attachments: createAttachmentRepository(db),
+    storage: options.storage ?? createMemoryStorage(),
+    tasks: taskRepo,
+    projectService: projects,
+    activity,
+  });
+  return { auth, projects, tasks, comments, activity, attachments };
 }

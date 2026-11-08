@@ -1,6 +1,6 @@
 import { openSqlite } from "@/db/sqlite";
 import type { PasswordHasher, User } from "@/features/auth/domain/types";
-import { createContainer, type Container } from "@/server/container";
+import { createContainer, type Container, type ContainerOptions } from "@/server/container";
 
 /** Fast, deterministic hasher for tests that are not about hashing. */
 export const plainHasher: PasswordHasher = {
@@ -17,8 +17,8 @@ export interface World {
 }
 
 /** A fresh in-memory database with three users and one project (owner + member). */
-export async function makeWorld(): Promise<World> {
-  const c = createContainer(openSqlite(":memory:"), { hasher: plainHasher });
+export async function makeWorld(options: ContainerOptions = {}): Promise<World> {
+  const c = createContainer(openSqlite(":memory:"), { hasher: plainHasher, ...options });
   const reg = async (name: string) =>
     (await c.auth.register({ name, email: `${name.toLowerCase()}@test.dev`, password: "password1" })).user;
   const owner = await reg("Olivia");

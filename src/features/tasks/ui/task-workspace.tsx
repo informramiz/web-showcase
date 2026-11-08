@@ -205,7 +205,16 @@ export function TaskWorkspace({ projectId, members, role, currentUserId }: Props
           )}
         </div>
       )}
-      {openTaskId && <TaskDetail projectId={projectId} taskId={openTaskId} members={memberMap} onClose={closeDetail} />}
+      {openTaskId && (
+        <TaskDetail
+          projectId={projectId}
+          taskId={openTaskId}
+          members={memberMap}
+          currentUserId={currentUserId}
+          isOwner={role === "owner"}
+          onClose={closeDetail}
+        />
+      )}
     </section>
   );
 }

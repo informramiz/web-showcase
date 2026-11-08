@@ -1,5 +1,6 @@
 import type { Jsonified } from "@/core/json";
 import type { ActivityView } from "@/features/activity/domain/types";
+import type { AttachmentView } from "@/features/attachments/domain/types";
 import type { CommentView } from "@/features/comments/domain/types";
 import type { Page, TaskJson, TaskStatus } from "../domain/types";
 
@@ -24,10 +25,12 @@ export type TaskUpdate = Partial<
 
 export type CommentJson = Jsonified<CommentView>;
 export type ActivityJson = Jsonified<ActivityView>;
+export type AttachmentJson = Jsonified<AttachmentView>;
 
 export interface TaskDetailJson {
   task: TaskJson;
   comments: CommentJson[];
+  attachments: AttachmentJson[];
   activity: ActivityJson[];
 }
 
@@ -42,8 +45,10 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(url: string, init?: { method: string; body?: string }): Promise<T> {
-  const res = await fetch(url, { ...init, headers: { "content-type": "application/json" } });
+async function request<T>(url: string, init?: { method: string; body?: string | FormData }): Promise<T> {
+  // FormData sets its own multipart content type (with the boundary), so only JSON bodies get a header.
+  const headers: HeadersInit = init?.body instanceof FormData ? {} : { "content-type": "application/json" };
+  const res = await fetch(url, { ...init, headers });
   if (res.status === 204) return undefined as T;
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
@@ -70,4 +75,13 @@ export const tasksApi = {
   detail: (projectId: string, id: string) => request<TaskDetailJson>(item(projectId, id)),
   addComment: (projectId: string, id: string, body: string) =>
     request<CommentJson>(`${item(projectId, id)}/comments`, { method: "POST", body: JSON.stringify({ body }) }),
+  attachmentUrl: (projectId: string, id: string, attachmentId: string) =>
+    `${item(projectId, id)}/attachments/${encodeURIComponent(attachmentId)}`,
+  upload(projectId: string, id: string, file: File) {
+    const form = new FormData();
+    form.set("file", file);
+    return request<AttachmentJson>(`${item(projectId, id)}/attachments`, { method: "POST", body: form });
+  },
+  removeAttachment: (projectId: string, id: string, attachmentId: string) =>
+    request<undefined>(tasksApi.attachmentUrl(projectId, id, attachmentId), { method: "DELETE" }),
 };

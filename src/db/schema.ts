@@ -108,3 +108,26 @@ export const activity = sqliteTable(
   },
   (t) => [index("activity_task_idx").on(t.projectId, t.taskId, t.createdAt)],
 );
+
+export const attachments = sqliteTable(
+  "attachments",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    uploaderId: text("uploader_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    contentType: text("content_type").notNull(),
+    size: integer("size").notNull(),
+    /** Object key in R2 (or the local uploads folder). Never derived from user input. */
+    storageKey: text("storage_key").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("attachments_task_idx").on(t.taskId, t.createdAt)],
+);

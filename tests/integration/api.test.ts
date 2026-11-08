@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as collection from "@/app/api/projects/[projectId]/tasks/route";
 import * as item from "@/app/api/projects/[projectId]/tasks/[taskId]/route";
 import * as commentsRoute from "@/app/api/projects/[projectId]/tasks/[taskId]/comments/route";
+import * as uploadRoute from "@/app/api/projects/[projectId]/tasks/[taskId]/attachments/route";
+import * as fileRoute from "@/app/api/projects/[projectId]/tasks/[taskId]/attachments/[attachmentId]/route";
 import { SESSION_COOKIE } from "@/features/auth/server/cookie";
 import { setContainer } from "@/server/runtime";
 import { makeWorld, type World } from "../helpers/setup";
@@ -110,5 +112,47 @@ describe("task route handlers", () => {
       activity: [{ action: "comment.added" }, { action: "task.created" }],
     });
     expect((await item.GET(req(`${base()}/nope`, memberToken), taskCtx("nope"))).status).toBe(404);
+  });
+
+  it("uploads, downloads with safe headers and deletes attachments", async () => {
+    const task = await w.c.tasks.create(w.owner, w.projectId, { title: "Files" });
+    const url = `${base()}/${task.id}/attachments`;
+    const upload = (form: FormData | string, headers: Record<string, string> = {}) =>
+      uploadRoute.POST(
+        new NextRequest(`http://localhost${url}`, {
+          method: "POST",
+          headers: { cookie: `${SESSION_COOKIE}=${memberToken}`, ...headers },
+          body: form,
+        }),
+        taskCtx(task.id),
+      );
+    const form = new FormData();
+    form.set("file", new File(["a,b\n1,2"], "data.csv", { type: "text/csv" }));
+    const created = await upload(form);
+    expect(created.status).toBe(201);
+    const a = (await created.json()) as { id: string; name: string };
+    expect(a.name).toBe("data.csv");
+
+    expect((await upload(new FormData())).status).toBe(400);
+    expect((await upload("not multipart", { "content-type": "text/plain" })).status).toBe(400);
+    expect((await upload(form, { "content-length": String(10 * 1024 * 1024) })).status).toBe(413);
+
+    const fileCtx = (attachmentId: string) => ({
+      params: Promise.resolve({ projectId: w.projectId, taskId: task.id, attachmentId }),
+    });
+    const res = await fileRoute.GET(req(`${url}/${a.id}`, ownerToken), fileCtx(a.id));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/csv");
+    expect(res.headers.get("content-disposition")).toMatch(/^attachment; filename="data.csv"/);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await res.text()).toBe("a,b\n1,2");
+
+    const detail = await item.GET(req(`${base()}/${task.id}`, memberToken), taskCtx(task.id));
+    expect(await detail.json()).toMatchObject({ attachments: [{ id: a.id, uploaderName: "Max" }] });
+
+    expect(
+      (await fileRoute.DELETE(req(`${url}/${a.id}`, memberToken, { method: "DELETE" }), fileCtx(a.id))).status,
+    ).toBe(204);
+    expect((await fileRoute.GET(req(`${url}/${a.id}`, ownerToken), fileCtx(a.id))).status).toBe(404);
   });
 });
