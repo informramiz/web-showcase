@@ -9,8 +9,17 @@ import { createContainer } from "@/server/container";
 import { seedDemo } from "./demo";
 import { openSqlite } from "./sqlite";
 
-// Parents last for deletes, first for inserts. Sessions are cleared, not copied.
-const TABLES = ["users", "projects", "project_members", "tasks", "comments", "activity", "attachments"] as const;
+// Parents last for deletes, first for inserts. Sessions and handled Stripe events are cleared, not copied.
+const TABLES = [
+  "users",
+  "projects",
+  "project_members",
+  "tasks",
+  "comments",
+  "activity",
+  "attachments",
+  "subscriptions",
+] as const;
 
 const literal = (v: unknown): string => {
   if (v === null || v === undefined) return "NULL";
@@ -24,7 +33,11 @@ async function main() {
   await seedDemo(createContainer(db));
   const sqlite = (db as unknown as { $client: Database.Database }).$client;
 
-  const out = ["DELETE FROM sessions;", ...[...TABLES].reverse().map((t) => `DELETE FROM ${t};`)];
+  const out = [
+    "DELETE FROM sessions;",
+    "DELETE FROM stripe_events;",
+    ...[...TABLES].reverse().map((t) => `DELETE FROM ${t};`),
+  ];
   for (const table of TABLES) {
     for (const row of sqlite.prepare(`SELECT * FROM ${table}`).all() as Record<string, unknown>[]) {
       const cols = Object.keys(row);

@@ -4,6 +4,7 @@ export type AppErrorKind =
   | "forbidden"
   | "not_found"
   | "conflict"
+  | "payment_required"
   | "length_required"
   | "too_large"
   | "rate_limited";
@@ -14,6 +15,7 @@ const STATUS: Record<AppErrorKind, number> = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
+  payment_required: 402,
   length_required: 411,
   too_large: 413,
   rate_limited: 429,

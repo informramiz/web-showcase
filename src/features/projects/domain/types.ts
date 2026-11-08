@@ -28,6 +28,7 @@ export interface ProjectRepository {
   insert(project: Project, ownerId: string): Promise<void>;
   findById(id: string): Promise<Project | null>;
   listForUser(userId: string): Promise<ProjectSummary[]>;
+  countOwned(userId: string): Promise<number>;
   update(id: string, patch: Partial<Pick<Project, "name" | "description">>): Promise<void>;
   delete(id: string): Promise<void>;
   getRole(projectId: string, userId: string): Promise<Role | null>;

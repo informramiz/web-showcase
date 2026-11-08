@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/features/auth/server/session";
+import { BillingCard } from "@/features/billing/ui/billing-card";
 import { CreateProjectForm } from "@/features/projects/ui/create-project-form";
 import { getContainer } from "@/server/runtime";
 
@@ -8,7 +9,8 @@ export const metadata: Metadata = { title: "Projects" };
 
 export default async function ProjectsPage() {
   const user = await requireUser();
-  const projects = await getContainer().projects.listForUser(user);
+  const { projects: projectService, billing } = getContainer();
+  const [projects, plan] = await Promise.all([projectService.listForUser(user), billing.status(user)]);
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <section className="space-y-3">
@@ -32,8 +34,9 @@ export default async function ProjectsPage() {
           ))}
         </ul>
       </section>
-      <aside>
+      <aside className="space-y-4">
         <CreateProjectForm />
+        {plan.enabled && <BillingCard status={plan} />}
       </aside>
     </div>
   );

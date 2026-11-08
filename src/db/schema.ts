@@ -131,3 +131,22 @@ export const attachments = sqliteTable(
   },
   (t) => [index("attachments_task_idx").on(t.taskId, t.createdAt)],
 );
+
+/** One row per user who has started a Stripe checkout. Written only by the billing service. */
+export const subscriptions = sqliteTable("subscriptions", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  customerId: text("customer_id").notNull().unique(),
+  subscriptionId: text("subscription_id"),
+  status: text("status").notNull(),
+  currentPeriodEnd: integer("current_period_end", { mode: "timestamp_ms" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/** Stripe event ids already handled, so redelivered webhooks are no-ops. */
+export const stripeEvents = sqliteTable("stripe_events", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  receivedAt: integer("received_at", { mode: "timestamp_ms" }).notNull(),
+});

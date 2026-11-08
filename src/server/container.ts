@@ -9,6 +9,9 @@ import { AuthService } from "@/features/auth/domain/auth-service";
 import { createPbkdf2Hasher } from "@/features/auth/domain/crypto";
 import type { PasswordHasher } from "@/features/auth/domain/types";
 import { createSessionRepository, createUserRepository } from "@/features/auth/data/drizzle-auth-repositories";
+import { BillingService } from "@/features/billing/domain/billing-service";
+import type { BillingGateway } from "@/features/billing/domain/types";
+import { createSubscriptionRepository } from "@/features/billing/data/drizzle-subscription-repository";
 import { CommentService } from "@/features/comments/domain/comment-service";
 import { createCommentRepository } from "@/features/comments/data/drizzle-comment-repository";
 import { ProjectService, revokeQuietly } from "@/features/projects/domain/project-service";
@@ -26,6 +29,7 @@ export interface Container {
   activity: ActivityService;
   attachments: AttachmentService;
   realtime: RealtimeService;
+  billing: BillingService;
 }
 
 /** Adapters that differ between Cloudflare, local dev and tests. Everything else is built from the database. */
@@ -36,6 +40,8 @@ export interface ContainerOptions {
   transport?: RealtimeTransport;
   /** File bytes. Defaults to memory, which suits tests; the runtime passes R2 or a local folder. */
   storage?: AttachmentStorage;
+  /** Stripe (test mode). Absent means billing is off and no plan limits apply. */
+  billing?: BillingGateway;
 }
 
 /** Composition root: the only place that knows which implementation backs each port. */
@@ -53,7 +59,11 @@ export function createContainer(db: Db, options: ContainerOptions = {}): Contain
       for (const p of await projectRepo.listForUser(userId)) await revokeQuietly(events, p.id, userId);
     },
   });
-  const projects = new ProjectService({ projects: projectRepo, users, events });
+  const billing = new BillingService({
+    subscriptions: createSubscriptionRepository(db),
+    gateway: options.billing ?? null,
+  });
+  const projects = new ProjectService({ projects: projectRepo, users, events, planLimits: billing });
   const activity = new ActivityService({
     activity: createActivityRepository(db),
     projectService: projects,
@@ -74,5 +84,5 @@ export function createContainer(db: Db, options: ContainerOptions = {}): Contain
     activity,
   });
   const realtime = new RealtimeService({ projectService: projects, transport: options.transport ?? { kind: "poll" } });
-  return { auth, projects, tasks, comments, activity, attachments, realtime };
+  return { auth, projects, tasks, comments, activity, attachments, realtime, billing };
 }

@@ -1,6 +1,7 @@
 import { AppError } from "@/core/errors";
 import { parseInput } from "@/core/validation";
 import type { User, UserRepository } from "@/features/auth/domain/types";
+import { unlimitedPolicy, type PlanLimitsPolicy } from "@/features/billing/domain/plans";
 import { noopEvents, type ProjectEvents } from "@/features/realtime/domain/types";
 import { can, type ProjectAction } from "./permissions";
 import { addMemberSchema, createProjectSchema, updateProjectSchema } from "./schemas";
@@ -11,6 +12,8 @@ export interface ProjectDeps {
   users: UserRepository;
   /** Live-connection port; removing a member closes their sockets. */
   events?: Pick<ProjectEvents, "revoke">;
+  /** Plan limits (billing). Defaults to unlimited. */
+  planLimits?: PlanLimitsPolicy;
   now?: () => Date;
   newId?: () => string;
 }
@@ -18,10 +21,12 @@ export interface ProjectDeps {
 export class ProjectService {
   private readonly now: () => Date;
   private readonly newId: () => string;
+  private readonly limits: PlanLimitsPolicy;
 
   constructor(private readonly deps: ProjectDeps) {
     this.now = deps.now ?? (() => new Date());
     this.newId = deps.newId ?? (() => crypto.randomUUID());
+    this.limits = deps.planLimits ?? unlimitedPolicy;
   }
 
   /**
@@ -49,6 +54,13 @@ export class ProjectService {
 
   async create(actor: User, input: unknown): Promise<Project> {
     const data = parseInput(createProjectSchema, input);
+    const { ownedProjects } = await this.limits.limitsFor(actor.id);
+    if ((await this.deps.projects.countOwned(actor.id)) >= ownedProjects) {
+      throw new AppError(
+        "payment_required",
+        `The Free plan allows ${ownedProjects} projects. Upgrade to Pro for more.`,
+      );
+    }
     const project: Project = { id: this.newId(), ...data, createdAt: this.now() };
     await this.deps.projects.insert(project, actor.id);
     return project;
@@ -71,6 +83,16 @@ export class ProjectService {
     if (!user) throw new AppError("not_found", "No user with that email", { email: ["No user with that email"] });
     if (await this.deps.projects.getRole(projectId, user.id)) {
       throw new AppError("conflict", "Already a member", { email: ["Already a member"] });
+    }
+    // Limits follow the owner's plan, so one Pro owner covers everyone they invite.
+    const members = await this.deps.projects.listMembers(projectId);
+    const owner = members.find((m) => m.role === "owner");
+    const { membersPerProject } = await this.limits.limitsFor(owner?.id ?? actor.id);
+    if (members.length >= membersPerProject) {
+      throw new AppError(
+        "payment_required",
+        `The Free plan allows ${membersPerProject} members per project. Upgrade to Pro for more.`,
+      );
     }
     await this.deps.projects.addMember(projectId, user.id, "member");
     return { id: user.id, email: user.email, name: user.name, role: "member" };

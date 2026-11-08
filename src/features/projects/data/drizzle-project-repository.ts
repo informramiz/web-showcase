@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import type { Db } from "@/db/types";
 import { projectMembers, projects, tasks, users } from "@/db/schema";
 import type { ProjectRepository } from "../domain/types";
@@ -47,6 +47,13 @@ export function createProjectRepository(db: Db): ProjectRepository {
         .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
         .limit(1);
       return row?.role ?? null;
+    },
+    async countOwned(userId) {
+      const [row] = await db
+        .select({ n: count() })
+        .from(projectMembers)
+        .where(and(eq(projectMembers.userId, userId), eq(projectMembers.role, "owner")));
+      return row?.n ?? 0;
     },
     async listMembers(projectId) {
       return db

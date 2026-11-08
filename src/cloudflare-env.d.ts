@@ -5,4 +5,8 @@ interface CloudflareEnv {
   PROJECT_ROOM: unknown;
   /** Secret (wrangler secret put). Signs WebSocket tickets; absent means polling. */
   REALTIME_SECRET?: string;
+  /** Secrets. Stripe test-mode keys; billing is hidden unless all three are set. */
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_ID?: string;
 }
