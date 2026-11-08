@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { FormError } from "@/components/field";
 import type { ActionState } from "@/server/action-state";
 import type { Member, Role } from "../domain/types";
@@ -10,6 +10,7 @@ import { Avatar } from "@/components/avatar";
 export function MembersPanel({ projectId, members, role }: { projectId: string; members: Member[]; role: Role }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addMemberAction.bind(null, projectId), {});
   const [removing, startRemove] = useTransition();
+  const [removeError, setRemoveError] = useState<string>();
   const isOwner = role === "owner";
 
   return (
@@ -29,7 +30,11 @@ export function MembersPanel({ projectId, members, role }: { projectId: string; 
                 type="button"
                 className="text-xs text-muted hover:text-danger"
                 disabled={removing}
-                onClick={() => startRemove(() => void removeMemberAction(projectId, m.id))}
+                onClick={() =>
+                  startRemove(async () => {
+                    setRemoveError((await removeMemberAction(projectId, m.id)).error);
+                  })
+                }
                 aria-label={`Remove ${m.name}`}
               >
                 Remove
@@ -38,6 +43,7 @@ export function MembersPanel({ projectId, members, role }: { projectId: string; 
           </li>
         ))}
       </ul>
+      <FormError message={removeError} />
       {isOwner && (
         <form action={action} className="space-y-2 border-t border-border pt-3">
           <FormError message={state.fields?.email?.[0] ?? state.error} />

@@ -8,9 +8,10 @@ import type { Page, Task, TaskRepository } from "./types";
 
 export interface TaskDeps {
   tasks: TaskRepository;
-  projects: ProjectRepository;
+  /** Only membership lookups are needed, to check that an assignee belongs to the project. */
+  projects: Pick<ProjectRepository, "getRole">;
   /** Owns the role check, so tasks follow the same rules as everything else in a project. */
-  projectService: ProjectService;
+  projectService: Pick<ProjectService, "authorize">;
   now?: () => Date;
   newId?: () => string;
 }

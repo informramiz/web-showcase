@@ -9,7 +9,6 @@ import { TaskService } from "@/features/tasks/domain/task-service";
 import { createTaskRepository } from "@/features/tasks/data/drizzle-task-repository";
 
 export interface Container {
-  db: Db;
   auth: AuthService;
   projects: ProjectService;
   tasks: TaskService;
@@ -22,5 +21,5 @@ export function createContainer(db: Db, hasher: PasswordHasher = createPbkdf2Has
   const auth = new AuthService({ users, sessions: createSessionRepository(db), hasher });
   const projects = new ProjectService({ projects: projectRepo, users });
   const tasks = new TaskService({ tasks: createTaskRepository(db), projects: projectRepo, projectService: projects });
-  return { db, auth, projects, tasks };
+  return { auth, projects, tasks };
 }
