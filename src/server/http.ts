@@ -68,3 +68,40 @@ export async function readJson(req: NextRequest): Promise<unknown> {
     return undefined;
   }
 }
+
+/**
+ * Reads a request body into memory, refusing more than `maxBytes`. Content-Length is required and checked up
+ * front (411 if missing or invalid, 413 if too big), but it is only a hint: the stream itself is counted and
+ * cancelled as soon as it passes the limit, so a client that lies about the length still can't make the server
+ * buffer an unbounded body.
+ */
+export async function readBodyLimited(req: Request, maxBytes: number): Promise<Uint8Array<ArrayBuffer>> {
+  const header = req.headers.get("content-length")?.trim() ?? "";
+  const declared = /^\d+$/.test(header) ? Number(header) : NaN;
+  if (!Number.isSafeInteger(declared) || declared <= 0) {
+    throw new AppError("length_required", "A valid Content-Length header is required");
+  }
+  if (declared > maxBytes) throw new AppError("too_large", "Request body too large");
+  if (!req.body) throw new AppError("validation", "Request body is empty");
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new AppError("too_large", "Request body too large");
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}

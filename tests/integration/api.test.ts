@@ -117,15 +117,30 @@ describe("task route handlers", () => {
   it("uploads, downloads with safe headers and deletes attachments", async () => {
     const task = await w.c.tasks.create(w.owner, w.projectId, { title: "Files" });
     const url = `${base()}/${task.id}/attachments`;
-    const upload = (form: FormData | string, headers: Record<string, string> = {}) =>
-      uploadRoute.POST(
+    /** Encodes the body like a browser would and sets Content-Length, unless a header override says otherwise. */
+    const upload = async (form: FormData | string, headers: Record<string, string | null> = {}) => {
+      const encoded = new Request("http://localhost", { method: "POST", body: form });
+      const bytes = new Uint8Array(await encoded.arrayBuffer());
+      const h = new Headers({
+        cookie: `${SESSION_COOKIE}=${memberToken}`,
+        "content-type": encoded.headers.get("content-type") ?? "",
+        "content-length": String(bytes.byteLength),
+      });
+      for (const [k, v] of Object.entries(headers)) {
+        if (v === null) h.delete(k);
+        else h.set(k, v);
+      }
+      return uploadRoute.POST(
+        // A stream body, so the Request constructor doesn't fill in Content-Length on its own.
         new NextRequest(`http://localhost${url}`, {
           method: "POST",
-          headers: { cookie: `${SESSION_COOKIE}=${memberToken}`, ...headers },
-          body: form,
+          headers: h,
+          body: new Blob([bytes]).stream(),
+          duplex: "half",
         }),
         taskCtx(task.id),
       );
+    };
     const form = new FormData();
     form.set("file", new File(["a,b\n1,2"], "data.csv", { type: "text/csv" }));
     const created = await upload(form);
@@ -135,7 +150,17 @@ describe("task route handlers", () => {
 
     expect((await upload(new FormData())).status).toBe(400);
     expect((await upload("not multipart", { "content-type": "text/plain" })).status).toBe(400);
+    // Declared too big: refused before reading.
     expect((await upload(form, { "content-length": String(10 * 1024 * 1024) })).status).toBe(413);
+    // Missing or invalid Content-Length: refused (it used to fail open as 0).
+    expect((await upload(form, { "content-length": null })).status).toBe(411);
+    for (const bad of ["abc", "-5", "0", "1.5"]) {
+      expect((await upload(form, { "content-length": bad })).status).toBe(411);
+    }
+    // Lying header: claims 100 bytes, sends 6 MB. The counting stream cuts it off.
+    const big = new FormData();
+    big.set("file", new File([new Uint8Array(6 * 1024 * 1024)], "big.png", { type: "image/png" }));
+    expect((await upload(big, { "content-length": "100" })).status).toBe(413);
 
     const fileCtx = (attachmentId: string) => ({
       params: Promise.resolve({ projectId: w.projectId, taskId: task.id, attachmentId }),
