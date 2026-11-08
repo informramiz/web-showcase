@@ -3,18 +3,10 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import type { Page, TaskJson } from "../domain/types";
 import { tasksApi, type NewTask, type TaskQueryParams, type TaskUpdate } from "./api";
-
-export const taskKeys = {
-  project: (projectId: string) => ["tasks", projectId] as const,
-  list: (projectId: string, q: TaskQueryParams) => ["tasks", projectId, q] as const,
-};
+import { taskKeys, taskListOptions } from "./queries";
 
 export function useTasks(projectId: string, q: TaskQueryParams) {
-  return useQuery({
-    queryKey: taskKeys.list(projectId, q),
-    queryFn: () => tasksApi.list(projectId, q),
-    placeholderData: keepPreviousData,
-  });
+  return useQuery({ ...taskListOptions(projectId, q), placeholderData: keepPreviousData });
 }
 
 type Snapshot = [QueryKey, Page<TaskJson> | undefined][];

@@ -5,10 +5,10 @@ import type { Role } from "@/features/projects/domain/types";
 import { STATUS_LABEL, TASK_STATUSES, type TaskJson, type TaskStatus } from "../domain/types";
 import { Board } from "./board";
 import { useCreateTask, useDeleteTask, useTasks, useUpdateTask } from "./hooks";
+import { boardQuery } from "./queries";
 import type { MemberRef } from "./task-card";
 import { TaskList } from "./task-list";
 
-const BOARD_LIMIT = 100;
 const LIST_PAGE_SIZE = 10;
 
 function useDebounced<T>(value: T, ms = 250): T {
@@ -43,7 +43,7 @@ export function TaskWorkspace({ projectId, members, role, currentUserId }: Props
 
   const query =
     view === "board"
-      ? { search, assigneeId, pageSize: BOARD_LIMIT }
+      ? boardQuery(search, assigneeId)
       : { search, assigneeId, status: status || undefined, page, pageSize: LIST_PAGE_SIZE };
   const { data, isPending, isError, error, isFetching } = useTasks(projectId, query);
 

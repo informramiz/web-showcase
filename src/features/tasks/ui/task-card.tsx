@@ -1,19 +1,12 @@
 "use client";
 
 import { Avatar } from "@/components/avatar";
+import { dueLabel } from "../domain/due-date";
 import { STATUS_LABEL, TASK_STATUSES, type TaskJson, type TaskStatus } from "../domain/types";
 
 export interface MemberRef {
   id: string;
   name: string;
-}
-
-export function dueLabel(dueDate: string | null, status: TaskStatus): { text: string; overdue: boolean } | null {
-  if (!dueDate) return null;
-  const today = new Date().toISOString().slice(0, 10);
-  const d = new Date(`${dueDate}T00:00:00`);
-  const text = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  return { text, overdue: status !== "done" && dueDate < today };
 }
 
 interface Props {

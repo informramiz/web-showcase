@@ -26,6 +26,11 @@ export interface Task {
 /** A task as it travels over JSON. */
 export type TaskJson = Omit<Task, "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string };
 
+/** The same shape `Response.json` produces, for data handed to the client without going through HTTP. */
+export function toTaskJson(task: Task): TaskJson {
+  return { ...task, createdAt: task.createdAt.toISOString(), updatedAt: task.updatedAt.toISOString() };
+}
+
 export interface TaskFilter {
   search?: string;
   status?: TaskStatus;

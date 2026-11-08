@@ -1,11 +1,22 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { environmentManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+
+function makeQueryClient() {
+  // Hydrated server data stays fresh for 30 s, so the client does not refetch it straight away.
+  return new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } } });
+}
+
+let browserQueryClient: QueryClient | undefined;
+
+/** A new client per server render (no data shared between users), one reused client in the browser. */
+function getQueryClient(): QueryClient {
+  if (environmentManager.isServer()) return makeQueryClient();
+  browserQueryClient ??= makeQueryClient();
+  return browserQueryClient;
+}
 
 export function Providers({ children }: { children: ReactNode }) {
-  const [client] = useState(
-    () => new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } } }),
-  );
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return <QueryClientProvider client={getQueryClient()}>{children}</QueryClientProvider>;
 }

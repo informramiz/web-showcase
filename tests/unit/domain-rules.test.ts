@@ -4,6 +4,7 @@ import { parseInput } from "@/core/validation";
 import { loginSchema, registerSchema } from "@/features/auth/domain/schemas";
 import { can } from "@/features/projects/domain/permissions";
 import { createTaskSchema, taskQuerySchema, updateTaskSchema } from "@/features/tasks/domain/schemas";
+import { toTaskJson } from "@/features/tasks/domain/types";
 
 describe("permissions", () => {
   it("lets owners do everything", () => {
@@ -86,5 +87,25 @@ describe("task schemas", () => {
     });
     expect(parseInput(taskQuerySchema, {})).toMatchObject({ page: 1, pageSize: 20 });
     expect(() => parseInput(taskQuerySchema, { pageSize: "500" })).toThrow(AppError);
+  });
+});
+
+describe("toTaskJson", () => {
+  it("serialises dates exactly as Response.json would", () => {
+    const at = new Date("2026-03-04T05:06:07.000Z");
+    const task = {
+      id: "t1",
+      projectId: "p1",
+      title: "Ship it",
+      description: "",
+      status: "todo" as const,
+      assigneeId: null,
+      dueDate: null,
+      position: 1,
+      createdBy: "u1",
+      createdAt: at,
+      updatedAt: at,
+    };
+    expect(toTaskJson(task)).toEqual(JSON.parse(JSON.stringify(task)));
   });
 });

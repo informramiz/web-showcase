@@ -2,7 +2,8 @@
 
 import { Avatar } from "@/components/avatar";
 import { STATUS_LABEL, TASK_STATUSES, type Page, type TaskJson, type TaskStatus } from "../domain/types";
-import { dueLabel, type MemberRef } from "./task-card";
+import { dueLabel } from "../domain/due-date";
+import type { MemberRef } from "./task-card";
 
 interface Props {
   page: Page<TaskJson>;
