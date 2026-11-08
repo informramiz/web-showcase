@@ -7,15 +7,20 @@ import * as webhookRoute from "@/app/api/billing/webhook/route";
 import { SESSION_COOKIE } from "@/features/auth/server/cookie";
 import type { BillingEvent, BillingGateway } from "@/features/billing/domain/types";
 import { setContainer } from "@/server/runtime";
-import { makeWorld, type World } from "../helpers/setup";
+import { openSqlite } from "@/db/sqlite";
+import { projects } from "@/db/schema";
+import { createContainer } from "@/server/container";
+import { makeWorld, plainHasher, type World } from "../helpers/setup";
 
 const T0 = new Date("2026-01-01T00:00:00Z");
 const at = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
 
 /**
- * Stands in for Stripe. The "signature" is the event id prefixed with "sig:", so tests drive the domain with
+ * Stands in for Stripe. The "signature" is a well-formed header whose v1 part is the hex event id, so tests drive the domain with
  * typed events; real signature verification is covered against the Stripe SDK in stripe-gateway.test.ts.
  */
+const sigFor = (id: string) => `t=1767225600,v1=${Buffer.from(id).toString("hex")}`;
+
 class FakeGateway implements BillingGateway {
   readonly events = new Map<string, BillingEvent>();
   readonly checkouts: Parameters<BillingGateway["createCheckoutSession"]>[0][] = [];
@@ -28,13 +33,14 @@ class FakeGateway implements BillingGateway {
     return Promise.resolve(`https://portal.stripe.test/${customerId}`);
   }
   parseWebhook(_raw: string, signature: string) {
-    const event = this.events.get(signature.replace(/^sig:/, ""));
+    const v1 = /v1=([0-9a-f]+)/.exec(signature)?.[1] ?? "";
+    const event = this.events.get(Buffer.from(v1, "hex").toString());
     return event ? Promise.resolve(event) : Promise.reject(new Error("No signatures found matching"));
   }
   /** Registers an event and returns the signature header for it. */
   sign(event: BillingEvent): string {
     this.events.set(event.id, event);
-    return `sig:${event.id}`;
+    return sigFor(event.id);
   }
 }
 
@@ -195,14 +201,14 @@ describe("webhook state transitions", () => {
     const event = checkout(w.owner.id, { userId: "no-such-user" }); // FK violation on insert
     await expect(w.deliver(event)).rejects.toThrow();
     w.gw.events.set(event.id, { ...event, userId: w.owner.id } as BillingEvent);
-    await w.c.billing.handleWebhook("{}", `sig:${event.id}`);
+    await w.c.billing.handleWebhook("{}", sigFor(event.id));
     expect(await w.c.billing.status(w.owner)).toMatchObject({ plan: "pro" });
   });
 
   it("rejects a missing or invalid signature as a validation error", async () => {
     const w = await billingWorld();
     await expect(w.c.billing.handleWebhook("{}", null)).rejects.toMatchObject({ kind: "validation" });
-    await expect(w.c.billing.handleWebhook("{}", "sig:forged")).rejects.toMatchObject({ kind: "validation" });
+    await expect(w.c.billing.handleWebhook("{}", sigFor("forged"))).rejects.toMatchObject({ kind: "validation" });
   });
 });
 
@@ -267,25 +273,101 @@ describe("billing routes", () => {
     expect(await portal.json()).toEqual({ url: "https://portal.stripe.test/cus_1" });
   });
 
+  const hook = (body: BodyInit, headers: Record<string, string>) =>
+    webhookRoute.POST(new NextRequest("http://localhost/api/billing/webhook", { method: "POST", body, headers }));
+  const sized = (body: string, signature?: string) => ({
+    "content-length": String(new TextEncoder().encode(body).byteLength),
+    ...(signature === undefined ? {} : { "stripe-signature": signature }),
+  });
+
   it("webhook: 200 on a signed event, 400 on a bad or missing signature", async () => {
     const w = await billingWorld();
     setContainer(w.c);
-    const sig = w.gw.sign(checkout(w.owner.id));
-    const ok = await webhookRoute.POST(
-      req("/api/billing/webhook", { method: "POST", body: "{}", headers: { "stripe-signature": sig } }),
-    );
+    const ok = await hook("{}", sized("{}", w.gw.sign(checkout(w.owner.id))));
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ received: true });
-    const bad = await webhookRoute.POST(
-      req("/api/billing/webhook", { method: "POST", body: "{}", headers: { "stripe-signature": "sig:nope" } }),
+    expect((await hook("{}", sized("{}", sigFor("nope")))).status).toBe(400);
+    expect((await hook("{}", sized("{}"))).status).toBe(400);
+  });
+
+  it("webhook: refuses a malformed signature header without reading the body", async () => {
+    const w = await billingWorld();
+    setContainer(w.c);
+    let pulled = false;
+    // highWaterMark 0: the stream is pulled only when someone actually reads the body.
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull() {
+          pulled = true;
+          throw new Error("body must not be read");
+        },
+      },
+      { highWaterMark: 0 },
     );
-    expect(bad.status).toBe(400);
-    expect((await webhookRoute.POST(req("/api/billing/webhook", { method: "POST", body: "{}" }))).status).toBe(400);
+    for (const signature of ["garbage", "v1=abc", "t=1", "t=x,v1=ab"]) {
+      const init = {
+        method: "POST",
+        body,
+        headers: { "content-length": "2", "stripe-signature": signature },
+        duplex: "half" as const,
+      };
+      const res = await webhookRoute.POST(new NextRequest("http://localhost/api/billing/webhook", init));
+      expect(res.status).toBe(400);
+    }
+    expect(pulled).toBe(false);
+  });
+
+  it("webhook: caps the body at 256 KB and requires Content-Length", async () => {
+    const w = await billingWorld();
+    setContainer(w.c);
+    const sig = w.gw.sign(checkout(w.owner.id));
+    const big = "x".repeat(256 * 1024 + 1);
+    expect((await hook(big, sized(big, sig))).status).toBe(413);
+    expect((await hook("{}", { "stripe-signature": sig })).status).toBe(411);
+    const atLimit = "x".repeat(256 * 1024);
+    expect((await hook(atLimit, sized(atLimit, sig))).status).toBe(200);
   });
 
   it("maps a plan limit to 402 on the JSON API", async () => {
     const { errorResponse } = await import("@/server/http");
     const { AppError } = await import("@/core/errors");
     expect(errorResponse(new AppError("payment_required", "Upgrade")).status).toBe(402);
+  });
+});
+
+describe("plan limits under concurrency", () => {
+  it("concurrent creates cannot overshoot the Free project limit", async () => {
+    const w = await billingWorld(); // owner already owns one project
+    const results = await Promise.allSettled(
+      Array.from({ length: 6 }, (_, i) => w.c.projects.create(w.owner, { name: `Race ${String(i)}` })),
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+    const refused = results.flatMap((r) => (r.status === "rejected" ? [(r.reason as { kind: string }).kind] : []));
+    expect(refused).toEqual(Array.from({ length: 4 }, () => "payment_required"));
+    const owned = (await w.c.projects.listForUser(w.owner)).filter((p) => p.role === "owner");
+    expect(owned).toHaveLength(3);
+  });
+
+  it("concurrent invites cannot overshoot the Free member limit", async () => {
+    const w = await billingWorld(); // owner + member = 2 of 5
+    const users = await Promise.all(
+      ["P", "Q", "R", "S", "T"].map(
+        async (n) => (await w.c.auth.register({ name: n, email: `${n}@race.dev`, password: "password1" })).user,
+      ),
+    );
+    const results = await Promise.allSettled(
+      users.map((u) => w.c.projects.addMember(w.owner, w.projectId, { email: u.email })),
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
+    expect((await w.c.projects.get(w.owner, w.projectId)).members).toHaveLength(5);
+  });
+
+  it("a refused create leaves no orphan project row", async () => {
+    const db = openSqlite(":memory:");
+    const c = createContainer(db, { hasher: plainHasher, billing: new FakeGateway() });
+    const { user } = await c.auth.register({ name: "Solo", email: "solo@test.dev", password: "password1" });
+    for (const name of ["One", "Two", "Three"]) await c.projects.create(user, { name });
+    await expect(c.projects.create(user, { name: "Four" })).rejects.toMatchObject({ kind: "payment_required" });
+    expect(await db.select().from(projects)).toHaveLength(3);
   });
 });

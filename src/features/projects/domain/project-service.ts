@@ -55,14 +55,13 @@ export class ProjectService {
   async create(actor: User, input: unknown): Promise<Project> {
     const data = parseInput(createProjectSchema, input);
     const { ownedProjects } = await this.limits.limitsFor(actor.id);
-    if ((await this.deps.projects.countOwned(actor.id)) >= ownedProjects) {
+    const project: Project = { id: this.newId(), ...data, createdAt: this.now() };
+    if (!(await this.deps.projects.insert(project, actor.id, ownedProjects))) {
       throw new AppError(
         "payment_required",
-        `The Free plan allows ${ownedProjects} projects. Upgrade to Pro for more.`,
+        `The Free plan allows ${String(ownedProjects)} projects. Upgrade to Pro for more.`,
       );
     }
-    const project: Project = { id: this.newId(), ...data, createdAt: this.now() };
-    await this.deps.projects.insert(project, actor.id);
     return project;
   }
 
@@ -85,16 +84,15 @@ export class ProjectService {
       throw new AppError("conflict", "Already a member", { email: ["Already a member"] });
     }
     // Limits follow the owner's plan, so one Pro owner covers everyone they invite.
-    const members = await this.deps.projects.listMembers(projectId);
-    const owner = members.find((m) => m.role === "owner");
+    const owner = (await this.deps.projects.listMembers(projectId)).find((m) => m.role === "owner");
     const { membersPerProject } = await this.limits.limitsFor(owner?.id ?? actor.id);
-    if (members.length >= membersPerProject) {
+    // The count and the insert are one statement in the repository, so concurrent invites can't overshoot.
+    if (!(await this.deps.projects.addMember(projectId, user.id, "member", membersPerProject))) {
       throw new AppError(
         "payment_required",
-        `The Free plan allows ${membersPerProject} members per project. Upgrade to Pro for more.`,
+        `The Free plan allows ${String(membersPerProject)} members per project. Upgrade to Pro for more.`,
       );
     }
-    await this.deps.projects.addMember(projectId, user.id, "member");
     return { id: user.id, email: user.email, name: user.name, role: "member" };
   }
 

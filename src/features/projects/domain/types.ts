@@ -25,14 +25,15 @@ export interface ProjectDetail extends Project {
 }
 
 export interface ProjectRepository {
-  insert(project: Project, ownerId: string): Promise<void>;
+  /** Inserts the project with its owner unless the owner already owns `maxOwned` projects; false if refused. */
+  insert(project: Project, ownerId: string, maxOwned: number): Promise<boolean>;
   findById(id: string): Promise<Project | null>;
   listForUser(userId: string): Promise<ProjectSummary[]>;
-  countOwned(userId: string): Promise<number>;
   update(id: string, patch: Partial<Pick<Project, "name" | "description">>): Promise<void>;
   delete(id: string): Promise<void>;
   getRole(projectId: string, userId: string): Promise<Role | null>;
   listMembers(projectId: string): Promise<Member[]>;
-  addMember(projectId: string, userId: string, role: Role): Promise<void>;
+  /** Adds the member unless the project already has `maxMembers`; false if refused. Atomic with the count. */
+  addMember(projectId: string, userId: string, role: Role, maxMembers: number): Promise<boolean>;
   removeMember(projectId: string, userId: string): Promise<void>;
 }
