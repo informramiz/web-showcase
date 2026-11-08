@@ -4,17 +4,10 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import type { User } from "../domain/types";
 import { getContainer } from "@/server/runtime";
-import { SESSION_COOKIE } from "./cookie-name";
+import { SESSION_COOKIE, sessionCookieOptions } from "./cookie";
 
 export async function setSessionCookie(token: string, expiresAt: Date): Promise<void> {
-  (await cookies()).set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    // Lax blocks the cookie on cross-site POST/PATCH/DELETE, which is the CSRF defence for the JSON API.
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    expires: expiresAt,
-  });
+  (await cookies()).set(SESSION_COOKIE, token, sessionCookieOptions(expiresAt));
 }
 
 export async function clearSessionCookie(): Promise<void> {

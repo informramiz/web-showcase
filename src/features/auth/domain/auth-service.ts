@@ -3,11 +3,8 @@ import { createMemoryRateLimiter, type RateLimiter } from "@/core/rate-limit";
 import { parseInput } from "@/core/validation";
 import { generateToken, sha256Hex } from "./crypto";
 import { loginSchema, registerSchema } from "./schemas";
+import { RENEW_BELOW_MS, SESSION_TTL_MS } from "./session-policy";
 import { toUser, type PasswordHasher, type SessionRepository, type User, type UserRepository } from "./types";
-
-export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-/** Extend a session when less than half its lifetime is left. */
-const RENEW_BELOW_MS = SESSION_TTL_MS / 2;
 
 export interface AuthDeps {
   users: UserRepository;

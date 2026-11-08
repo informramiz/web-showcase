@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryRateLimiter } from "@/core/rate-limit";
-import { AuthService, REGISTER_FAILED, SESSION_TTL_MS } from "@/features/auth/domain/auth-service";
+import { AuthService, REGISTER_FAILED } from "@/features/auth/domain/auth-service";
+import { SESSION_TTL_MS } from "@/features/auth/domain/session-policy";
 import type { PasswordHasher } from "@/features/auth/domain/types";
 import type { SessionRecord, SessionRepository, UserRecord, UserRepository } from "@/features/auth/domain/types";
 import { plainHasher } from "../helpers/setup";

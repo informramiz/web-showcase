@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as collection from "@/app/api/projects/[projectId]/tasks/route";
 import * as item from "@/app/api/projects/[projectId]/tasks/[taskId]/route";
-import { SESSION_COOKIE } from "@/features/auth/server/cookie-name";
+import { SESSION_COOKIE } from "@/features/auth/server/cookie";
 import { setContainer } from "@/server/runtime";
 import { makeWorld, type World } from "../helpers/setup";
 
@@ -36,6 +36,15 @@ describe("task route handlers", () => {
   it("requires a valid session", async () => {
     expect((await collection.GET(req(base(), null), projectCtx())).status).toBe(401);
     expect((await collection.GET(req(base(), "forged"), projectCtx())).status).toBe(401);
+  });
+
+  it("rejects cross-site mutations even with a valid cookie", async () => {
+    const r = new NextRequest(`http://localhost${base()}`, {
+      method: "POST",
+      headers: { cookie: `${SESSION_COOKIE}=${ownerToken}`, origin: "https://evil.example", host: "localhost" },
+      body: JSON.stringify({ title: "Forged" }),
+    });
+    expect((await collection.POST(r, projectCtx())).status).toBe(403);
   });
 
   it("creates, lists with filters, updates and deletes", async () => {

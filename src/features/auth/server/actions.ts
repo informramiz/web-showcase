@@ -2,9 +2,10 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { clientIp, toActionState, type ActionState } from "@/server/action-state";
+import { toActionState, type ActionState } from "@/server/action-state";
+import { clientIp } from "@/server/http";
 import { getContainer } from "@/server/runtime";
-import { SESSION_COOKIE } from "./cookie-name";
+import { SESSION_COOKIE } from "./cookie";
 import { clearSessionCookie, setSessionCookie } from "./session";
 
 export async function loginAction(_: ActionState, form: FormData): Promise<ActionState> {
