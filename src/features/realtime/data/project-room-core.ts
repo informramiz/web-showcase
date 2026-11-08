@@ -20,6 +20,11 @@ export interface RoomState<S extends RoomSocket> {
 
 const USED_PREFIX = "ticket:";
 const REVOKED_PREFIX = "revoked:";
+/**
+ * Tickets are stamped by the Next.js isolate and the cutoff by the Durable Object, on different clocks. Tickets
+ * issued up to this long after a revocation are still refused, so modest clock skew can't let an old one in.
+ */
+export const REVOCATION_SKEW_MS = 5_000;
 /** Application close code (4000-4999) telling the client its access was withdrawn. */
 export const REVOKED_CLOSE_CODE = 4001;
 
@@ -39,7 +44,7 @@ export class ProjectRoomCore<S extends RoomSocket> {
     const key = USED_PREFIX + claims.jti;
     if (await this.state.storage.get(key)) return false;
     const cutoff = await this.state.storage.get<number>(REVOKED_PREFIX + claims.userId);
-    if (cutoff !== undefined && claims.iat <= cutoff) return false;
+    if (cutoff !== undefined && claims.iat <= cutoff + REVOCATION_SKEW_MS) return false;
     await this.prune(now);
     await this.state.storage.put(key, claims.exp);
     return true;
@@ -83,7 +88,7 @@ export class ProjectRoomCore<S extends RoomSocket> {
     const revoked = await this.state.storage.list<number>({ prefix: REVOKED_PREFIX });
     const stale = [
       ...[...used].filter(([, exp]) => exp <= now),
-      ...[...revoked].filter(([, cutoff]) => cutoff + TICKET_TTL_MS <= now),
+      ...[...revoked].filter(([, cutoff]) => cutoff + REVOCATION_SKEW_MS + TICKET_TTL_MS <= now),
     ].map(([k]) => k);
     if (stale.length) await this.state.storage.delete(stale);
   }

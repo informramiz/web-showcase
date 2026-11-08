@@ -223,3 +223,4 @@ For `npm run preview`, apply migrations and the seed locally first (the same com
 - **Shared browser QueryClient.** One client per tab, as the guides recommend. Sign-out clears it before the Server Action redirects, and removing a member invalidates the cached board, so no stale data survives either.
 - **Fixed-window rate limiting, in memory.** Simple and testable. It is the part a real deploy replaces first (see Security).
 - **No email delivery.** Members are added by the email of an existing account. Invites, password reset and email verification would need a mail provider.
+- **Clock skew on revocation.** A revoke stores a cutoff from the Durable Object's clock and the room refuses tickets whose `iat` (from the Next.js isolate's clock) is at or before cutoff + 5 s; skew between Worker isolates beyond that margin could let a ticket issued just before a revocation through within its 30 s lifetime.

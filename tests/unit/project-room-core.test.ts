@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TICKET_TTL_MS } from "@/features/realtime/domain/ticket";
 import {
+  REVOCATION_SKEW_MS,
   ProjectRoomCore,
   REVOKED_CLOSE_CODE,
   type RoomSocket,
@@ -54,9 +55,15 @@ describe("ProjectRoomCore", () => {
     const old = ticket("issued-before", 1_000);
     await room.revoke("alice", 1_000);
     expect(await room.admit(old, 1_200)).toBe(false);
-    // Bob is unaffected, and Alice's tickets issued after the revocation work (if she is still allowed one).
+    // Bob is unaffected; Alice's tickets issued after the revocation plus skew margin work (if she gets one).
     expect(await room.admit({ ...ticket("bob", 1_000), userId: "bob" }, 1_200)).toBe(true);
-    expect(await room.admit(ticket("issued-after", 1_001), 1_200)).toBe(true);
+    expect(await room.admit(ticket("issued-after", 1_001 + REVOCATION_SKEW_MS), 1_200)).toBe(true);
+  });
+
+  it("allows for clock skew: a ticket stamped slightly after the cutoff is still refused", async () => {
+    const room = new ProjectRoomCore(fakeState().state);
+    await room.revoke("alice", 1_000);
+    expect(await room.admit(ticket("skewed", 1_000 + REVOCATION_SKEW_MS), 1_200)).toBe(false);
   });
 
   it("prunes used ticket ids and revocation cutoffs once they can no longer matter", async () => {
@@ -64,7 +71,8 @@ describe("ProjectRoomCore", () => {
     const room = new ProjectRoomCore(state);
     await room.admit(ticket("old", 0), 0);
     await room.revoke("alice", 0);
-    await room.admit(ticket("new", TICKET_TTL_MS), TICKET_TTL_MS);
+    const later = TICKET_TTL_MS + REVOCATION_SKEW_MS;
+    await room.admit(ticket("new", later), later);
     expect([...store.keys()]).toEqual(["ticket:new"]);
   });
 

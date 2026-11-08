@@ -24,12 +24,13 @@ export class RealtimeService {
   }
 
   async connection(actor: User, projectId: string): Promise<RealtimeConnection> {
+    // Taken before the membership check: a revocation racing this request then has a cutoff >= iat.
+    const now = this.now();
     await this.deps.projectService.authorize(actor, projectId, "project.view");
     const { transport } = this.deps;
     const path = encodeURIComponent(projectId);
     switch (transport.kind) {
       case "websocket": {
-        const now = this.now();
         const ticket = await signTicket(
           { projectId, userId: actor.id, jti: this.newId(), iat: now, exp: now + TICKET_TTL_MS },
           transport.secret,
