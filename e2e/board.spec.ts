@@ -21,6 +21,8 @@ test("sign in, create a task and move it across the board", async ({ page }) => 
   const done = page.getByTestId("column-done");
   const card = (col: typeof todo) => col.getByTestId("task-card").filter({ hasText: title });
   await expect(card(todo)).toBeVisible();
+  // The optimistic card is not draggable until the server confirms it (matters on a real network).
+  await expect(card(todo)).toHaveAttribute("draggable", "true");
 
   // Drag and drop to "In progress".
   await card(todo).dragTo(inProgress);
