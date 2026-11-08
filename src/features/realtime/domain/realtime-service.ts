@@ -29,8 +29,9 @@ export class RealtimeService {
     const path = encodeURIComponent(projectId);
     switch (transport.kind) {
       case "websocket": {
+        const now = this.now();
         const ticket = await signTicket(
-          { projectId, userId: actor.id, jti: this.newId(), exp: this.now() + TICKET_TTL_MS },
+          { projectId, userId: actor.id, jti: this.newId(), iat: now, exp: now + TICKET_TTL_MS },
           transport.secret,
         );
         return { transport: "websocket", url: `/realtime/${path}?ticket=${encodeURIComponent(ticket)}` };

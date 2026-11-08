@@ -3,7 +3,7 @@ import { signTicket, TICKET_TTL_MS, verifyTicket } from "@/features/realtime/dom
 
 const SECRET = "test-secret";
 const NOW = 1_800_000_000_000;
-const claims = { projectId: "p1", userId: "u1", jti: "j1", exp: NOW + TICKET_TTL_MS };
+const claims = { projectId: "p1", userId: "u1", jti: "j1", iat: NOW, exp: NOW + TICKET_TTL_MS };
 
 describe("realtime tickets", () => {
   it("round-trips valid claims", async () => {

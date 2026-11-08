@@ -26,10 +26,11 @@ export default {
     const projectId = decodeURIComponent(match[1]);
     const claims = await verifyTicket(url.searchParams.get("ticket") ?? "", secret, projectId, Date.now());
     if (!claims) return new Response("Invalid ticket", { status: 401 });
-    // Hand the verified claims to the room, which enforces single use and tags the socket with the user.
+    // Hand the verified claims to the room, which enforces single use and revocation and tags the socket.
     const headers = new Headers(request.headers);
     headers.set(TICKET_HEADERS.userId, claims.userId);
     headers.set(TICKET_HEADERS.jti, claims.jti);
+    headers.set(TICKET_HEADERS.iat, String(claims.iat));
     headers.set(TICKET_HEADERS.exp, String(claims.exp));
     return env.PROJECT_ROOM.getByName(projectId).fetch(new Request(request, { headers }));
   },

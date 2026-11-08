@@ -8,6 +8,8 @@ export interface TicketClaims {
   userId: string;
   /** Unique id; the project room admits each ticket once. */
   jti: string;
+  /** Issued at, epoch milliseconds; the room refuses tickets issued before the user's access was revoked. */
+  iat: number;
   /** Expiry, epoch milliseconds. */
   exp: number;
 }

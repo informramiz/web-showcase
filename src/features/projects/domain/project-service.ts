@@ -87,8 +87,10 @@ export class ProjectService {
 }
 
 /**
- * Membership is already gone, so the realtime room's own ticket check would refuse a reconnect; closing open
- * sockets is the extra step. A failure is logged, not thrown: the removal itself succeeded.
+ * Tells the project's realtime room to close the user's open sockets and refuse any ticket issued before now
+ * (tickets are signed, so the room can't check membership itself). New tickets need a session and membership,
+ * which are already gone. A failure is logged, not thrown: the removal or logout itself succeeded, and any
+ * leftover ticket expires within TICKET_TTL_MS.
  */
 export async function revokeQuietly(
   events: Pick<ProjectEvents, "revoke">,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TICKET_TTL_MS } from "@/features/realtime/domain/ticket";
 import {
   ProjectRoomCore,
   REVOKED_CLOSE_CODE,
@@ -38,34 +39,47 @@ function fakeState(sockets: FakeSocket[] = []) {
   return { state, store };
 }
 
+const ticket = (jti: string, iat: number) => ({ userId: "alice", jti, iat, exp: iat + TICKET_TTL_MS });
+
 describe("ProjectRoomCore", () => {
   it("admits a ticket once and refuses reuse", async () => {
     const room = new ProjectRoomCore(fakeState().state);
-    expect(await room.admit({ jti: "a", exp: 2_000 }, 1_000)).toBe(true);
-    expect(await room.admit({ jti: "a", exp: 2_000 }, 1_500)).toBe(false);
-    expect(await room.admit({ jti: "b", exp: 2_000 }, 1_500)).toBe(true);
+    expect(await room.admit(ticket("a", 1_000), 1_000)).toBe(true);
+    expect(await room.admit(ticket("a", 1_000), 1_500)).toBe(false);
+    expect(await room.admit(ticket("b", 1_000), 1_500)).toBe(true);
   });
 
-  it("prunes used ticket ids once they have expired", async () => {
+  it("refuses a ticket issued before the user was revoked, even if unused", async () => {
+    const room = new ProjectRoomCore(fakeState().state);
+    const old = ticket("issued-before", 1_000);
+    await room.revoke("alice", 1_000);
+    expect(await room.admit(old, 1_200)).toBe(false);
+    // Bob is unaffected, and Alice's tickets issued after the revocation work (if she is still allowed one).
+    expect(await room.admit({ ...ticket("bob", 1_000), userId: "bob" }, 1_200)).toBe(true);
+    expect(await room.admit(ticket("issued-after", 1_001), 1_200)).toBe(true);
+  });
+
+  it("prunes used ticket ids and revocation cutoffs once they can no longer matter", async () => {
     const { state, store } = fakeState();
     const room = new ProjectRoomCore(state);
-    await room.admit({ jti: "old", exp: 1_000 }, 500);
-    await room.admit({ jti: "new", exp: 9_000 }, 2_000);
+    await room.admit(ticket("old", 0), 0);
+    await room.revoke("alice", 0);
+    await room.admit(ticket("new", TICKET_TTL_MS), TICKET_TTL_MS);
     expect([...store.keys()]).toEqual(["ticket:new"]);
   });
 
-  it("revokes only the given user's sockets", () => {
+  it("revokes only the given user's sockets", async () => {
     const alice1 = new FakeSocket(["alice"]);
     const alice2 = new FakeSocket(["alice"]);
     const bob = new FakeSocket(["bob"]);
     const room = new ProjectRoomCore(fakeState([alice1, alice2, bob]).state);
     expect(room.tagsFor("alice")).toEqual(["alice"]);
-    expect(room.revoke("alice")).toBe(2);
+    expect(await room.revoke("alice", 0)).toBe(2);
     expect(alice1.closed).toEqual([REVOKED_CLOSE_CODE, "Access revoked"]);
     expect(alice2.closed?.[0]).toBe(REVOKED_CLOSE_CODE);
     expect(bob.closed).toBeNull();
     // Closing an already-closed socket is tolerated.
-    expect(room.revoke("alice")).toBe(2);
+    expect(await room.revoke("alice", 1)).toBe(2);
   });
 
   it("broadcasts to every socket even if one fails", () => {
