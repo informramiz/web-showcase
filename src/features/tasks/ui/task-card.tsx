@@ -15,9 +15,10 @@ interface Props {
   canDelete: boolean;
   onMove: (status: TaskStatus) => void;
   onDelete: () => void;
+  onOpen: () => void;
 }
 
-export function TaskCard({ task, assignee, canDelete, onMove, onDelete }: Props) {
+export function TaskCard({ task, assignee, canDelete, onMove, onDelete, onOpen }: Props) {
   const due = dueLabel(task.dueDate, task.status);
   const pending = task.id.startsWith("temp-");
   return (
@@ -30,7 +31,14 @@ export function TaskCard({ task, assignee, canDelete, onMove, onDelete }: Props)
       }}
       className={`card group cursor-grab space-y-2 p-3 shadow-sm active:cursor-grabbing ${pending ? "opacity-60" : ""}`}
     >
-      <p className={`text-sm font-medium ${task.status === "done" ? "text-muted line-through" : ""}`}>{task.title}</p>
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={pending}
+        className={`block w-full text-left text-sm font-medium hover:underline ${task.status === "done" ? "text-muted line-through" : ""}`}
+      >
+        {task.title}
+      </button>
       <div className="flex items-center gap-2 text-xs text-muted">
         {due && (
           <span className={`rounded px-1.5 py-0.5 ${due.overdue ? "bg-danger/10 text-danger" : "bg-surface-2"}`}>

@@ -56,12 +56,16 @@ export async function seedDemo(c: Container): Promise<number> {
     [mobile, sam, MOBILE_TASKS],
   ] as const) {
     for (const [title, status, who, due] of list) {
-      await c.tasks.create(owner, project.id, {
+      const task = await c.tasks.create(owner, project.id, {
         title,
         status,
         assigneeId: who === null ? null : users[who]?.id,
         dueDate: due === null ? null : day(due),
       });
+      if (title === "Write content migration plan") {
+        await c.comments.add(sam, project.id, task.id, { body: "Can we keep the old blog URLs? SEO wants 1:1." });
+        await c.comments.add(dana, project.id, task.id, { body: "Yes, the redirect map task covers it." });
+      }
     }
   }
   return users.length;

@@ -11,9 +11,18 @@ export type ProjectAction =
   | "members.manage"
   | "task.create"
   | "task.update"
-  | "task.delete";
+  | "task.delete"
+  | "comment.create"
+  | "attachment.create"
+  | "attachment.delete.any";
 
-const MEMBER_ACTIONS: ReadonlySet<ProjectAction> = new Set(["project.view", "task.create", "task.update"]);
+const MEMBER_ACTIONS: ReadonlySet<ProjectAction> = new Set([
+  "project.view",
+  "task.create",
+  "task.update",
+  "comment.create",
+  "attachment.create",
+]);
 
 export function can(role: Role | null, action: ProjectAction): boolean {
   if (role === "owner") return true;

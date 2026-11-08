@@ -67,3 +67,44 @@ export const tasks = sqliteTable(
   },
   (t) => [index("tasks_project_status_idx").on(t.projectId, t.status, t.position)],
 );
+
+export const comments = sqliteTable(
+  "comments",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("comments_task_idx").on(t.taskId, t.createdAt)],
+);
+
+/**
+ * Append-only audit trail. task_id deliberately has no foreign key: the history of a deleted task is kept.
+ * detail is a small JSON object (changed fields, from/to status, file name).
+ */
+export const activity = sqliteTable(
+  "activity",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    taskId: text("task_id"),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    detail: text("detail", { mode: "json" }).$type<Record<string, unknown>>(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("activity_task_idx").on(t.projectId, t.taskId, t.createdAt)],
+);

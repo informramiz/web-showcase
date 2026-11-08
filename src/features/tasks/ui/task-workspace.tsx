@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Role } from "@/features/projects/domain/types";
 import { STATUS_LABEL, TASK_STATUSES, type TaskJson, type TaskStatus } from "../domain/types";
 import { Board } from "./board";
 import { useCreateTask, useDeleteTask, useTasks, useUpdateTask } from "./hooks";
 import { boardQuery } from "./queries";
+import { TaskDetail } from "./task-detail";
 import type { MemberRef } from "./task-card";
 import { TaskList } from "./task-list";
 
@@ -34,6 +35,8 @@ export function TaskWorkspace({ projectId, members, role, currentUserId }: Props
   const [assigneeId, setAssigneeId] = useState("");
   const [status, setStatus] = useState<TaskStatus | "">("");
   const [pageState, setPageState] = useState({ page: 1, filterKey: "" });
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const closeDetail = useCallback(() => setOpenTaskId(null), []);
   const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 
   // Any filter change goes back to page 1.
@@ -183,6 +186,7 @@ export function TaskWorkspace({ projectId, members, role, currentUserId }: Props
                 canDelete={role === "owner"}
                 onMove={move}
                 onDelete={(t) => remove.mutate(t.id)}
+                onOpen={(t) => setOpenTaskId(t.id)}
               />
               {data.total > data.items.length && (
                 <p className="mt-2 text-xs text-muted">
@@ -191,10 +195,17 @@ export function TaskWorkspace({ projectId, members, role, currentUserId }: Props
               )}
             </>
           ) : (
-            <TaskList page={data} members={memberMap} onMove={move} onPage={setPage} />
+            <TaskList
+              page={data}
+              members={memberMap}
+              onMove={move}
+              onPage={setPage}
+              onOpen={(t) => setOpenTaskId(t.id)}
+            />
           )}
         </div>
       )}
+      {openTaskId && <TaskDetail projectId={projectId} taskId={openTaskId} members={memberMap} onClose={closeDetail} />}
     </section>
   );
 }

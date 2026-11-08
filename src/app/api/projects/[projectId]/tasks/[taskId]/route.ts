@@ -4,6 +4,18 @@ import { getContainer } from "@/server/runtime";
 
 type Ctx = RouteContext<"/api/projects/[projectId]/tasks/[taskId]">;
 
+/** Task detail: the task plus its comments and audit trail, in one round trip. */
+export const GET = withUser<Ctx>(async (_req, user, { params }) => {
+  const { projectId, taskId } = await params;
+  const c = getContainer();
+  const task = await c.tasks.get(user, projectId, taskId);
+  const [comments, activity] = await Promise.all([
+    c.comments.list(user, projectId, taskId),
+    c.activity.listForTask(user, projectId, taskId),
+  ]);
+  return NextResponse.json({ task, comments, activity });
+});
+
 export const PATCH = withUser<Ctx>(async (req, user, { params }) => {
   const { projectId, taskId } = await params;
   return NextResponse.json(await getContainer().tasks.update(user, projectId, taskId, await readJson(req)));

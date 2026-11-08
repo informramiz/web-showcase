@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as collection from "@/app/api/projects/[projectId]/tasks/route";
 import * as item from "@/app/api/projects/[projectId]/tasks/[taskId]/route";
+import * as commentsRoute from "@/app/api/projects/[projectId]/tasks/[taskId]/comments/route";
 import { SESSION_COOKIE } from "@/features/auth/server/cookie";
 import { setContainer } from "@/server/runtime";
 import { makeWorld, type World } from "../helpers/setup";
@@ -92,5 +93,22 @@ describe("task route handlers", () => {
   it("hides projects from non-members", async () => {
     const outsider = (await w.c.auth.login({ email: w.outsider.email, password: "password1" })).token;
     expect((await collection.GET(req(base(), outsider), projectCtx())).status).toBe(404);
+  });
+
+  it("returns task detail with comments and activity, and accepts comments", async () => {
+    const task = await w.c.tasks.create(w.owner, w.projectId, { title: "Detail me" });
+    const posted = await commentsRoute.POST(
+      req(`${base()}/${task.id}/comments`, memberToken, { method: "POST", body: { body: "Looks good" } }),
+      taskCtx(task.id),
+    );
+    expect(posted.status).toBe(201);
+
+    const detail = await item.GET(req(`${base()}/${task.id}`, memberToken), taskCtx(task.id));
+    expect(await detail.json()).toMatchObject({
+      task: { id: task.id, title: "Detail me" },
+      comments: [{ body: "Looks good", authorName: "Max" }],
+      activity: [{ action: "comment.added" }, { action: "task.created" }],
+    });
+    expect((await item.GET(req(`${base()}/nope`, memberToken), taskCtx("nope"))).status).toBe(404);
   });
 });

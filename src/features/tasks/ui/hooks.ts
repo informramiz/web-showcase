@@ -3,7 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import type { Page, TaskJson } from "../domain/types";
 import { tasksApi, type NewTask, type TaskQueryParams, type TaskUpdate } from "./api";
-import { taskKeys, taskListOptions } from "./queries";
+import { taskDetailOptions, taskKeys, taskListOptions } from "./queries";
 
 export function useTasks(projectId: string, q: TaskQueryParams) {
   return useQuery({ ...taskListOptions(projectId, q), placeholderData: keepPreviousData });
@@ -31,7 +31,11 @@ function useOptimistic<V, R>(
       return { snapshot };
     },
     onError: (_e, _v, ctx) => ctx?.snapshot.forEach(([k, data]) => qc.setQueryData(k, data)),
-    onSettled: () => qc.invalidateQueries({ queryKey: key }),
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: key }),
+        qc.invalidateQueries({ queryKey: taskKeys.detailRoot(projectId) }),
+      ]),
   });
 }
 
@@ -73,4 +77,16 @@ export function useCreateTask(projectId: string, createdBy: string) {
       return { ...page, total: page.total + 1, items: [...page.items, temp] };
     },
   );
+}
+
+export function useTaskDetail(projectId: string, taskId: string) {
+  return useQuery(taskDetailOptions(projectId, taskId));
+}
+
+export function useAddComment(projectId: string, taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) => tasksApi.addComment(projectId, taskId, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: taskKeys.detail(projectId, taskId) }),
+  });
 }

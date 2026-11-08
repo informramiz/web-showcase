@@ -18,7 +18,7 @@ export interface World {
 
 /** A fresh in-memory database with three users and one project (owner + member). */
 export async function makeWorld(): Promise<World> {
-  const c = createContainer(openSqlite(":memory:"), plainHasher);
+  const c = createContainer(openSqlite(":memory:"), { hasher: plainHasher });
   const reg = async (name: string) =>
     (await c.auth.register({ name, email: `${name.toLowerCase()}@test.dev`, password: "password1" })).user;
   const owner = await reg("Olivia");

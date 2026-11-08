@@ -10,6 +10,7 @@ interface Props {
   canDelete: boolean;
   onMove: (task: TaskJson, status: TaskStatus) => void;
   onDelete: (task: TaskJson) => void;
+  onOpen: (task: TaskJson) => void;
 }
 
 const ACCENT: Record<TaskStatus, string> = {
@@ -18,7 +19,7 @@ const ACCENT: Record<TaskStatus, string> = {
   done: "bg-emerald-500",
 };
 
-export function Board({ tasks, members, canDelete, onMove, onDelete }: Props) {
+export function Board({ tasks, members, canDelete, onMove, onDelete, onOpen }: Props) {
   const [over, setOver] = useState<TaskStatus | null>(null);
   const byId = new Map(tasks.map((t) => [t.id, t]));
 
@@ -57,6 +58,7 @@ export function Board({ tasks, members, canDelete, onMove, onDelete }: Props) {
                 canDelete={canDelete}
                 onMove={(s) => onMove(t, s)}
                 onDelete={() => onDelete(t)}
+                onOpen={() => onOpen(t)}
               />
             ))}
             {column.length === 0 && <p className="px-1 py-6 text-center text-xs text-muted">Drop tasks here</p>}

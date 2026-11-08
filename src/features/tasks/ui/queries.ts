@@ -8,6 +8,9 @@ import { tasksApi, type TaskQueryParams } from "./api";
 export const taskKeys = {
   project: (projectId: string) => ["tasks", projectId] as const,
   list: (projectId: string, q: TaskQueryParams) => ["tasks", projectId, q] as const,
+  /** Outside the "tasks" root on purpose: board optimistic updates rewrite every query under that root. */
+  detailRoot: (projectId: string) => ["task-detail", projectId] as const,
+  detail: (projectId: string, taskId: string) => ["task-detail", projectId, taskId] as const,
 };
 
 /** The board shows up to this many tasks in one request; the list view pages through the rest. */
@@ -20,4 +23,11 @@ export function boardQuery(search = "", assigneeId = ""): TaskQueryParams {
 
 export function taskListOptions(projectId: string, q: TaskQueryParams) {
   return queryOptions({ queryKey: taskKeys.list(projectId, q), queryFn: () => tasksApi.list(projectId, q) });
+}
+
+export function taskDetailOptions(projectId: string, taskId: string) {
+  return queryOptions({
+    queryKey: taskKeys.detail(projectId, taskId),
+    queryFn: () => tasksApi.detail(projectId, taskId),
+  });
 }

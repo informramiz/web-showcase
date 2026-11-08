@@ -1,10 +1,15 @@
 import type { Db } from "@/db/types";
+import { ActivityService } from "@/features/activity/domain/activity-service";
+import { createActivityRepository } from "@/features/activity/data/drizzle-activity-repository";
 import { AuthService } from "@/features/auth/domain/auth-service";
 import { createPbkdf2Hasher } from "@/features/auth/domain/crypto";
 import type { PasswordHasher } from "@/features/auth/domain/types";
 import { createSessionRepository, createUserRepository } from "@/features/auth/data/drizzle-auth-repositories";
+import { CommentService } from "@/features/comments/domain/comment-service";
+import { createCommentRepository } from "@/features/comments/data/drizzle-comment-repository";
 import { ProjectService } from "@/features/projects/domain/project-service";
 import { createProjectRepository } from "@/features/projects/data/drizzle-project-repository";
+import { noopEvents, type ProjectEvents } from "@/features/realtime/domain/types";
 import { TaskService } from "@/features/tasks/domain/task-service";
 import { createTaskRepository } from "@/features/tasks/data/drizzle-task-repository";
 
@@ -12,14 +17,38 @@ export interface Container {
   auth: AuthService;
   projects: ProjectService;
   tasks: TaskService;
+  comments: CommentService;
+  activity: ActivityService;
 }
 
-/** Composition root: the only place that knows which repository implementation backs each service. */
-export function createContainer(db: Db, hasher: PasswordHasher = createPbkdf2Hasher()): Container {
+/** Adapters that differ between Cloudflare, local dev and tests. Everything else is built from the database. */
+export interface ContainerOptions {
+  hasher?: PasswordHasher;
+  events?: ProjectEvents;
+}
+
+/** Composition root: the only place that knows which implementation backs each port. */
+export function createContainer(db: Db, options: ContainerOptions = {}): Container {
   const users = createUserRepository(db);
   const projectRepo = createProjectRepository(db);
-  const auth = new AuthService({ users, sessions: createSessionRepository(db), hasher });
+  const taskRepo = createTaskRepository(db);
+  const auth = new AuthService({
+    users,
+    sessions: createSessionRepository(db),
+    hasher: options.hasher ?? createPbkdf2Hasher(),
+  });
   const projects = new ProjectService({ projects: projectRepo, users });
-  const tasks = new TaskService({ tasks: createTaskRepository(db), projects: projectRepo, projectService: projects });
-  return { auth, projects, tasks };
+  const activity = new ActivityService({
+    activity: createActivityRepository(db),
+    projectService: projects,
+    events: options.events ?? noopEvents,
+  });
+  const tasks = new TaskService({ tasks: taskRepo, projects: projectRepo, projectService: projects, activity });
+  const comments = new CommentService({
+    comments: createCommentRepository(db),
+    tasks: taskRepo,
+    projectService: projects,
+    activity,
+  });
+  return { auth, projects, tasks, comments, activity };
 }

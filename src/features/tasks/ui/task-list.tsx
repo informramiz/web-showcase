@@ -10,9 +10,10 @@ interface Props {
   members: Map<string, MemberRef>;
   onMove: (task: TaskJson, status: TaskStatus) => void;
   onPage: (page: number) => void;
+  onOpen: (task: TaskJson) => void;
 }
 
-export function TaskList({ page, members, onMove, onPage }: Props) {
+export function TaskList({ page, members, onMove, onPage, onOpen }: Props) {
   const pages = Math.max(1, Math.ceil(page.total / page.pageSize));
   return (
     <div className="card overflow-hidden">
@@ -32,7 +33,11 @@ export function TaskList({ page, members, onMove, onPage }: Props) {
               const due = dueLabel(t.dueDate, t.status);
               return (
                 <tr key={t.id} className="border-t border-border">
-                  <td className="px-3 py-2">{t.title}</td>
+                  <td className="px-3 py-2">
+                    <button type="button" onClick={() => onOpen(t)} className="text-left hover:underline">
+                      {t.title}
+                    </button>
+                  </td>
                   <td className="px-3 py-2">
                     <select
                       aria-label={`Status of "${t.title}"`}
