@@ -92,6 +92,19 @@ export class AuthService {
     return this.startSession(toUser(user));
   }
 
+  /**
+   * Signs in the seeded public demo account without the password path or the per-email failure
+   * limiter, so a shared demo user can never be locked out globally. Still subject to the per-IP
+   * limiter for basic abuse protection. Only ever called with the fixed demo email; it is not a
+   * password-less login for real accounts.
+   */
+  async startDemoSession(email: string, client: ClientInfo = {}): Promise<SignedIn> {
+    this.throttleIp(client);
+    const user = await this.deps.users.findByEmail(email);
+    if (!user) throw new AppError("unauthorized", "Demo account is not available");
+    return this.startSession(toUser(user));
+  }
+
   /** Checked first, so a blocked request creates no other limiter keys. No IP (local dev) means no IP limit. */
   private throttleIp(client: ClientInfo): void {
     if (client.ip && !this.ipLimiter.hit(`ip:${client.ip}`)) throw tooMany();

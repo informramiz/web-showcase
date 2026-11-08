@@ -111,6 +111,33 @@ describe("AuthService", () => {
     await expect(auth.login(bad)).rejects.toMatchObject({ kind: "rate_limited" });
   });
 
+  it("starts a demo session without a password, even when that email is failure-limited", async () => {
+    const { auth, users } = service({ t: 0 }, plainHasher, 100, 2);
+    await auth.register({ name: "Demo", email: "demo@test.dev", password: "password1" });
+    const bad = { email: "demo@test.dev", password: "nope" };
+    // Drive the per-email failure limiter over its cap: a normal login is now locked out.
+    for (let i = 0; i < 3; i++) await expect(auth.login(bad)).rejects.toBeDefined();
+    await expect(auth.login(bad)).rejects.toMatchObject({ kind: "rate_limited" });
+    // The demo path bypasses the password and the failure limiter, so it still signs in.
+    const res = await auth.startDemoSession("demo@test.dev");
+    expect(res.user.email).toBe("demo@test.dev");
+    expect(users.size).toBe(1);
+  });
+
+  it("refuses a demo session when the demo account is not seeded", async () => {
+    const { auth } = service({ t: 0 });
+    await expect(auth.startDemoSession("missing@test.dev")).rejects.toMatchObject({ kind: "unauthorized" });
+  });
+
+  it("applies the per-IP limiter to demo sessions", async () => {
+    const { auth } = service({ t: 0 }, plainHasher, 1, 100);
+    await auth.register({ name: "Demo", email: "demo@test.dev", password: "password1" });
+    await auth.startDemoSession("demo@test.dev", { ip: "7.7.7.7" });
+    await expect(auth.startDemoSession("demo@test.dev", { ip: "7.7.7.7" })).rejects.toMatchObject({
+      kind: "rate_limited",
+    });
+  });
+
   it("caps all attempts per IP, and a blocked request creates no per-email keys", async () => {
     const failures = createMemoryRateLimiter(100, 60_000, () => 0);
     const f = fakes();
