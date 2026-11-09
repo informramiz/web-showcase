@@ -1,12 +1,14 @@
 import { and, asc, eq, sql } from "drizzle-orm";
+import { atomically } from "@/db/atomic";
 import type { Db } from "@/db/types";
+import { activityInserts } from "@/features/activity/data/drizzle-activity-repository";
 import { comments, users } from "@/db/schema";
 import type { CommentRepository } from "../domain/types";
 
 export function createCommentRepository(db: Db): CommentRepository {
   return {
-    async insert(comment) {
-      await db.insert(comments).values(comment);
+    async insert(comment, entries) {
+      await atomically(db, [db.insert(comments).values(comment), ...activityInserts(db, entries)]);
     },
     listForTask(projectId, taskId) {
       return db

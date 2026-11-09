@@ -1,12 +1,14 @@
 import { and, asc, eq, sql } from "drizzle-orm";
+import { atomically } from "@/db/atomic";
 import type { Db } from "@/db/types";
+import { activityInserts } from "@/features/activity/data/drizzle-activity-repository";
 import { attachments, users } from "@/db/schema";
 import type { AttachmentRepository } from "../domain/types";
 
 export function createAttachmentRepository(db: Db): AttachmentRepository {
   return {
-    async insert(attachment) {
-      await db.insert(attachments).values(attachment);
+    async insert(attachment, entries) {
+      await atomically(db, [db.insert(attachments).values(attachment), ...activityInserts(db, entries)]);
     },
     async findById(projectId, id) {
       const [row] = await db
@@ -34,8 +36,8 @@ export function createAttachmentRepository(db: Db): AttachmentRepository {
         .where(and(eq(attachments.projectId, projectId), eq(attachments.taskId, taskId)))
         .orderBy(asc(attachments.createdAt), asc(sql`${attachments}.rowid`));
     },
-    async delete(id) {
-      await db.delete(attachments).where(eq(attachments.id, id));
+    async delete(id, entries) {
+      await atomically(db, [db.delete(attachments).where(eq(attachments.id, id)), ...activityInserts(db, entries)]);
     },
   };
 }

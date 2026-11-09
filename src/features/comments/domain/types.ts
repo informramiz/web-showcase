@@ -1,3 +1,4 @@
+import type { ActivityEntry } from "@/features/activity/domain/types";
 export interface Comment {
   id: string;
   projectId: string;
@@ -12,6 +13,7 @@ export interface CommentView extends Comment {
 }
 
 export interface CommentRepository {
-  insert(comment: Comment): Promise<void>;
+  /** Stores the comment and its audit entries in one atomic batch. */
+  insert(comment: Comment, activity: ActivityEntry[]): Promise<void>;
   listForTask(projectId: string, taskId: string): Promise<CommentView[]>;
 }

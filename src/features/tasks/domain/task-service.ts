@@ -1,6 +1,6 @@
 import { AppError } from "@/core/errors";
 import { parseInput } from "@/core/validation";
-import { noopActivityLog, type ActivityLog } from "@/features/activity/domain/types";
+import type { ActivityEntry, ActivityLog } from "@/features/activity/domain/types";
 import type { User } from "@/features/auth/domain/types";
 import type { ProjectRepository } from "@/features/projects/domain/types";
 import type { ProjectService } from "@/features/projects/domain/project-service";
@@ -14,7 +14,7 @@ export interface TaskDeps {
   /** Owns the role check, so tasks follow the same rules as everything else in a project. */
   projectService: Pick<ProjectService, "authorize">;
   /** Audit trail; also what drives realtime notifications. */
-  activity?: ActivityLog;
+  activity: ActivityLog;
   now?: () => Date;
   newId?: () => string;
 }
@@ -22,12 +22,10 @@ export interface TaskDeps {
 export class TaskService {
   private readonly now: () => Date;
   private readonly newId: () => string;
-  private readonly activity: ActivityLog;
 
   constructor(private readonly deps: TaskDeps) {
     this.now = deps.now ?? (() => new Date());
     this.newId = deps.newId ?? (() => crypto.randomUUID());
-    this.activity = deps.activity ?? noopActivityLog;
   }
 
   async get(actor: User, projectId: string, taskId: string): Promise<Task> {
@@ -58,14 +56,15 @@ export class TaskService {
       createdAt: now,
       updatedAt: now,
     };
-    await this.deps.tasks.insert(task);
-    await this.activity.record({
+    const entry = this.deps.activity.prepare({
       projectId,
       taskId: task.id,
       actorId: actor.id,
       action: "task.created",
       detail: { name: task.title },
     });
+    await this.deps.tasks.insert(task, [entry]);
+    await this.deps.activity.publish([entry]);
     return task;
   }
 
@@ -80,9 +79,10 @@ export class TaskService {
       patch.position = (await this.deps.tasks.maxPosition(projectId, patch.status)) + 1;
     }
     const updatedAt = this.now();
-    await this.deps.tasks.update(projectId, taskId, { ...patch, updatedAt });
     const updated = { ...existing, ...patch, updatedAt };
-    await this.recordUpdate(actor, existing, updated, patch);
+    const entries = this.updateEntries(actor, existing, updated, patch);
+    await this.deps.tasks.update(projectId, taskId, { ...patch, updatedAt }, entries);
+    await this.deps.activity.publish(entries);
     return updated;
   }
 
@@ -90,32 +90,39 @@ export class TaskService {
     await this.deps.projectService.authorize(actor, projectId, "task.delete");
     const existing = await this.deps.tasks.findById(projectId, taskId);
     if (!existing) throw new AppError("not_found", "Task not found");
-    await this.deps.tasks.delete(projectId, taskId);
-    await this.activity.record({
+    const entry = this.deps.activity.prepare({
       projectId,
       taskId,
       actorId: actor.id,
       action: "task.deleted",
       detail: { name: existing.title },
     });
+    await this.deps.tasks.delete(projectId, taskId, [entry]);
+    await this.deps.activity.publish([entry]);
   }
 
   /** A column change is logged as a move; any other changed field as an edit. A no-op patch logs nothing. */
-  private async recordUpdate(actor: User, before: Task, after: Task, patch: TaskPatch): Promise<void> {
+  private updateEntries(actor: User, before: Task, after: Task, patch: TaskPatch): ActivityEntry[] {
     const base = { projectId: before.projectId, taskId: before.id, actorId: actor.id };
+    const entries: ActivityEntry[] = [];
     if (after.status !== before.status) {
-      await this.activity.record({
-        ...base,
-        action: "task.moved",
-        detail: { from: before.status, to: after.status, name: after.title },
-      });
+      entries.push(
+        this.deps.activity.prepare({
+          ...base,
+          action: "task.moved",
+          detail: { from: before.status, to: after.status, name: after.title },
+        }),
+      );
     }
     const fields = (Object.keys(patch) as (keyof TaskPatch)[]).filter(
       (k) => k !== "status" && !(k === "position" && after.status !== before.status) && before[k] !== after[k],
     );
     if (fields.length > 0) {
-      await this.activity.record({ ...base, action: "task.updated", detail: { fields, name: after.title } });
+      entries.push(
+        this.deps.activity.prepare({ ...base, action: "task.updated", detail: { fields, name: after.title } }),
+      );
     }
+    return entries;
   }
 
   private async assertAssignable(projectId: string, assigneeId: string | null): Promise<void> {

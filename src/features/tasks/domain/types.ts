@@ -1,3 +1,4 @@
+import type { ActivityEntry } from "@/features/activity/domain/types";
 export const TASK_STATUSES = ["todo", "in_progress", "done"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
@@ -48,10 +49,16 @@ export interface Page<T> {
 export type TaskPatch = Partial<Pick<Task, "title" | "description" | "status" | "assigneeId" | "dueDate" | "position">>;
 
 export interface TaskRepository {
-  insert(task: Task): Promise<void>;
+  /** Each write stores `activity` in the same atomic batch, so the change and its audit entries succeed or fail together. */
+  insert(task: Task, activity: ActivityEntry[]): Promise<void>;
   findById(projectId: string, id: string): Promise<Task | null>;
   list(projectId: string, filter: TaskFilter, offset: number, limit: number): Promise<{ items: Task[]; total: number }>;
-  update(projectId: string, id: string, patch: TaskPatch & { updatedAt: Date }): Promise<void>;
-  delete(projectId: string, id: string): Promise<void>;
+  update(
+    projectId: string,
+    id: string,
+    patch: TaskPatch & { updatedAt: Date },
+    activity: ActivityEntry[],
+  ): Promise<void>;
+  delete(projectId: string, id: string, activity: ActivityEntry[]): Promise<void>;
   maxPosition(projectId: string, status: TaskStatus): Promise<number>;
 }

@@ -171,3 +171,22 @@ describe("storage adapters", () => {
     expect(await r2.get("p/a")).toBeNull();
   });
 });
+
+describe("attachments without object storage", () => {
+  it("reports the feature as off and refuses uploads and downloads with 503", async () => {
+    const world = await makeWorld({ storage: null });
+    const t = await world.c.tasks.create(world.owner, world.projectId, { title: "x" });
+    expect(world.c.attachments.enabled).toBe(false);
+    expect(await world.c.attachments.list(world.owner, world.projectId, t.id)).toEqual([]);
+    await expect(world.c.attachments.upload(world.owner, world.projectId, t.id, file())).rejects.toMatchObject({
+      kind: "unavailable",
+    });
+    await expect(world.c.attachments.download(world.owner, world.projectId, t.id, "missing")).rejects.toMatchObject({
+      kind: "unavailable",
+    });
+  });
+
+  it("is on when storage is provided", () => {
+    expect(w.c.attachments.enabled).toBe(true);
+  });
+});

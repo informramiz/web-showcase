@@ -1,32 +1,35 @@
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { NextResponse } from "next/server";
 import { DEMO_EMAIL } from "@/db/demo";
 import { getCurrentUser, setSessionCookie } from "@/features/auth/server/session";
-import { clientIp } from "@/server/http";
+import { clientIp, isCrossSite } from "@/server/http";
 import { getContainer } from "@/server/runtime";
 
+/** 303 so the browser follows with GET; a relative Location keeps the public host, whatever the proxy sees. */
+const see = (path: string) => new NextResponse(null, { status: 303, headers: { location: path } });
+
 /**
- * Seamless, client-facing demo entry. A visitor opening the site is signed in as the seeded
- * demo user and dropped straight into populated boards — no login wall, no typing. The real
- * sign-in / register flow stays reachable at /login for anyone who wants to see auth itself.
+ * Loginless demo entry: signs the visitor in as the seeded demo user and sends them to the populated boards.
+ * It is a POST because it creates a session; GET is deliberately not exported, so Next answers 405 and
+ * prefetchers, crawlers and cross-site <img>/<a> requests can't trigger it.
  *
  * Guards:
- * - Cross-site requests are refused, so a third-party page cannot force a session onto a
- *   visitor's browser (login CSRF / session fixation).
+ * - Cross-site requests are refused (Origin vs Host, plus Sec-Fetch-Site), so a third-party page can't force a
+ *   session onto a visitor's browser (login CSRF / session fixation).
  * - An already signed-in visitor is sent to their boards and never swapped onto the demo account.
- * - The session is minted directly (startDemoSession), bypassing the password failure limiter,
- *   so the shared demo account can't be locked out. Any failure falls back to /login.
+ * - The session is minted directly (startDemoSession), bypassing the password failure limiter, so the shared
+ *   demo account can't be locked out. Any failure falls back to /login.
  */
-export async function GET() {
+export async function POST(req: Request) {
   const h = await headers();
-  if (h.get("sec-fetch-site") === "cross-site") redirect("/login");
-  if (await getCurrentUser()) redirect("/projects");
+  if (isCrossSite(req) || h.get("sec-fetch-site") === "cross-site") return see("/login");
+  if (await getCurrentUser()) return see("/projects");
 
   try {
     const res = await getContainer().auth.startDemoSession(DEMO_EMAIL, { ip: clientIp(h) });
     await setSessionCookie(res.token, res.expiresAt);
   } catch {
-    redirect("/login");
+    return see("/login");
   }
-  redirect("/projects");
+  return see("/projects");
 }

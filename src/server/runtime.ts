@@ -35,14 +35,15 @@ function stripeFrom(vars: StripeVars): { billing?: BillingGateway } {
 }
 
 /**
- * Workers: D1, R2, and a Durable Object per project for WebSockets. Without REALTIME_SECRET there is no way to
- * sign socket tickets, so clients fall back to polling.
+ * Workers: D1, R2 when the ATTACHMENTS binding exists, and a Durable Object per project for WebSockets.
+ * Without the R2 binding attachments are off (storage null). Without REALTIME_SECRET there is no way to sign
+ * socket tickets, so clients fall back to polling.
  */
 function cloudflareContainer(): Container {
   const { env } = getCloudflareContext();
   const secret = env.REALTIME_SECRET;
   return createContainer(drizzle(env.DB as D1Client, { schema }), {
-    storage: createR2Storage(env.ATTACHMENTS as R2BucketLike),
+    storage: env.ATTACHMENTS ? createR2Storage(env.ATTACHMENTS as R2BucketLike) : null,
     ...stripeFrom(env),
     ...(secret
       ? {

@@ -14,7 +14,13 @@ export const GET = withUser<Ctx>(async (_req, user, { params }) => {
     c.attachments.list(user, projectId, taskId),
     c.activity.listForTask(user, projectId, taskId),
   ]);
-  return NextResponse.json({ task, comments, attachments, activity });
+  return NextResponse.json({
+    task,
+    comments,
+    attachments,
+    activity,
+    attachmentsEnabled: c.attachments.enabled,
+  });
 });
 
 export const PATCH = withUser<Ctx>(async (req, user, { params }) => {

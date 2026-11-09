@@ -24,9 +24,9 @@
     },
   ],
   // R2 is not yet enabled on the Cloudflare account, so the attachments bucket can't be created.
-  // Temporarily disabled to ship the loginless demo; attachment ops no-op until R2 is enabled and
-  // this binding is restored, then re-deployed. Re-enable: uncomment + `wrangler r2 bucket create
-  // teamboard-attachments` + `npm run deploy`.
+  // Disabled until R2 is enabled on the account. Without the binding the runtime passes no storage, so
+  // attachments are off: the API answers 503 and the task panel says so. Re-enable: uncomment +
+  // `wrangler r2 bucket create teamboard-attachments` + `npm run deploy`.
   // "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "teamboard-attachments" }],
   "durable_objects": {
     "bindings": [{ "name": "PROJECT_ROOM", "class_name": "ProjectRoom" }],

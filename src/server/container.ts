@@ -38,8 +38,11 @@ export interface ContainerOptions {
   events?: ProjectEvents;
   /** How browsers receive events. Defaults to polling, which needs nothing from the platform. */
   transport?: RealtimeTransport;
-  /** File bytes. Defaults to memory, which suits tests; the runtime passes R2 or a local folder. */
-  storage?: AttachmentStorage;
+  /**
+   * File bytes. Undefined means memory, which suits tests; the runtime passes R2 or a local folder. Null turns
+   * attachments off (no storage on this deployment), which the API and UI report instead of failing late.
+   */
+  storage?: AttachmentStorage | null;
   /** Stripe (test mode). Absent means billing is off and no plan limits apply. */
   billing?: BillingGateway;
 }
@@ -78,7 +81,7 @@ export function createContainer(db: Db, options: ContainerOptions = {}): Contain
   });
   const attachments = new AttachmentService({
     attachments: createAttachmentRepository(db),
-    storage: options.storage ?? createMemoryStorage(),
+    storage: options.storage === undefined ? createMemoryStorage() : options.storage,
     tasks: taskRepo,
     projectService: projects,
     activity,
