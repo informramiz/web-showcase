@@ -63,19 +63,20 @@ export class AttachmentService {
     };
     // Bytes first, then the row: a failed insert leaves no row pointing at a missing object.
     await this.deps.storage.put(attachment.storageKey, file.data, contentType);
-    try {
-      await this.deps.attachments.insert(attachment);
-    } catch (e) {
-      await this.deleteObject(attachment.storageKey);
-      throw e;
-    }
-    await this.deps.activity.record({
+    const entry = this.deps.activity.prepare({
       projectId,
       taskId,
       actorId: actor.id,
       action: "attachment.added",
       detail: { name },
     });
+    try {
+      await this.deps.attachments.insert(attachment, [entry]);
+    } catch (e) {
+      await this.deleteObject(attachment.storageKey);
+      throw e;
+    }
+    await this.deps.activity.publish([entry]);
     return { ...attachment, uploaderName: actor.name };
   }
 
@@ -94,15 +95,16 @@ export class AttachmentService {
     if (attachment.uploaderId !== actor.id && !can(role, "attachment.delete.any")) {
       throw new AppError("forbidden", "Only the uploader or a project owner can delete this file");
     }
-    await this.deps.attachments.delete(attachment.id);
-    await this.deleteObject(attachment.storageKey);
-    await this.deps.activity.record({
+    const entry = this.deps.activity.prepare({
       projectId,
       taskId,
       actorId: actor.id,
       action: "attachment.deleted",
       detail: { name: attachment.name },
     });
+    await this.deps.attachments.delete(attachment.id, [entry]);
+    await this.deleteObject(attachment.storageKey);
+    await this.deps.activity.publish([entry]);
   }
 
   private async find(projectId: string, taskId: string, attachmentId: string): Promise<Attachment> {

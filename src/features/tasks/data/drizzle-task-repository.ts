@@ -1,5 +1,7 @@
 import { and, asc, count, eq, isNull, max, sql, type SQL } from "drizzle-orm";
+import { atomically } from "@/db/atomic";
 import type { Db } from "@/db/types";
+import { activityInserts } from "@/features/activity/data/drizzle-activity-repository";
 import { tasks } from "@/db/schema";
 import type { TaskFilter, TaskRepository } from "../domain/types";
 import { toFtsQuery } from "./fts-query";
@@ -23,8 +25,8 @@ function whereFor(projectId: string, f: TaskFilter): SQL | undefined {
 
 export function createTaskRepository(db: Db): TaskRepository {
   return {
-    async insert(task) {
-      await db.insert(tasks).values(task);
+    async insert(task, entries) {
+      await atomically(db, [db.insert(tasks).values(task), ...activityInserts(db, entries)]);
     },
     async findById(projectId, id) {
       const [row] = await db
@@ -46,14 +48,20 @@ export function createTaskRepository(db: Db): TaskRepository {
       const [totalRow] = await db.select({ n: count() }).from(tasks).where(where);
       return { items, total: totalRow?.n ?? 0 };
     },
-    async update(projectId, id, patch) {
-      await db
-        .update(tasks)
-        .set(patch)
-        .where(and(eq(tasks.projectId, projectId), eq(tasks.id, id)));
+    async update(projectId, id, patch, entries) {
+      await atomically(db, [
+        db
+          .update(tasks)
+          .set(patch)
+          .where(and(eq(tasks.projectId, projectId), eq(tasks.id, id))),
+        ...activityInserts(db, entries),
+      ]);
     },
-    async delete(projectId, id) {
-      await db.delete(tasks).where(and(eq(tasks.projectId, projectId), eq(tasks.id, id)));
+    async delete(projectId, id, entries) {
+      await atomically(db, [
+        db.delete(tasks).where(and(eq(tasks.projectId, projectId), eq(tasks.id, id))),
+        ...activityInserts(db, entries),
+      ]);
     },
     async maxPosition(projectId, status) {
       const [row] = await db

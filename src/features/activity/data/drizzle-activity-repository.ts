@@ -1,13 +1,19 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "@/db/types";
 import { activity, users } from "@/db/schema";
-import type { ActivityAction, ActivityRepository } from "../domain/types";
+import { type Statement } from "@/db/atomic";
+import type { ActivityAction, ActivityEntry, ActivityRepository } from "../domain/types";
+
+/**
+ * The audit-row insert as an unawaited statement. Other repositories pass it to `atomically` together with their
+ * own write, so a change and its log entry are committed as one unit.
+ */
+export function activityInserts(db: Db, entries: ActivityEntry[]): Statement[] {
+  return entries.map((e) => db.insert(activity).values({ ...e, detail: e.detail as Record<string, unknown> | null }));
+}
 
 export function createActivityRepository(db: Db): ActivityRepository {
   return {
-    async insert(entry) {
-      await db.insert(activity).values({ ...entry, detail: entry.detail as Record<string, unknown> | null });
-    },
     async listForTask(projectId, taskId, limit) {
       const rows = await db
         .select({

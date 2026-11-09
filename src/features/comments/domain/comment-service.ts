@@ -36,8 +36,9 @@ export class CommentService {
     const task = await this.deps.tasks.findById(projectId, taskId);
     if (!task) throw new AppError("not_found", "Task not found");
     const comment = { id: this.newId(), projectId, taskId, authorId: actor.id, body, createdAt: this.now() };
-    await this.deps.comments.insert(comment);
-    await this.deps.activity.record({ projectId, taskId, actorId: actor.id, action: "comment.added" });
+    const entry = this.deps.activity.prepare({ projectId, taskId, actorId: actor.id, action: "comment.added" });
+    await this.deps.comments.insert(comment, [entry]);
+    await this.deps.activity.publish([entry]);
     return { ...comment, authorName: actor.name };
   }
 }

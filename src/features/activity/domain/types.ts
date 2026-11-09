@@ -35,7 +35,6 @@ export interface ActivityView extends ActivityEntry {
 }
 
 export interface ActivityRepository {
-  insert(entry: ActivityEntry): Promise<void>;
   listForTask(projectId: string, taskId: string, limit: number): Promise<ActivityView[]>;
 }
 
@@ -43,9 +42,12 @@ export type ActivityInput = Pick<ActivityEntry, "projectId" | "taskId" | "actorI
   detail?: ActivityDetail;
 };
 
-/** What other services depend on to leave an audit trail. */
+/**
+ * What other services depend on to leave an audit trail. Two steps, so the entry can be stored in the same
+ * atomic write as the change it describes: `prepare` builds it, the caller's repository writes it together with
+ * the change, and `publish` then tells live viewers.
+ */
 export interface ActivityLog {
-  record(input: ActivityInput): Promise<void>;
+  prepare(input: ActivityInput): ActivityEntry;
+  publish(entries: ActivityEntry[]): Promise<void>;
 }
-
-export const noopActivityLog: ActivityLog = { record: () => Promise.resolve() };

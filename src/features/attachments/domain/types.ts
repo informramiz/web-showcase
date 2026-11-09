@@ -1,3 +1,4 @@
+import type { ActivityEntry } from "@/features/activity/domain/types";
 export interface Attachment {
   id: string;
   projectId: string;
@@ -15,10 +16,11 @@ export interface AttachmentView extends Attachment {
 }
 
 export interface AttachmentRepository {
-  insert(attachment: Attachment): Promise<void>;
+  /** Row changes store their audit entries in the same atomic batch. */
+  insert(attachment: Attachment, activity: ActivityEntry[]): Promise<void>;
   findById(projectId: string, id: string): Promise<Attachment | undefined>;
   listForTask(projectId: string, taskId: string): Promise<AttachmentView[]>;
-  delete(id: string): Promise<void>;
+  delete(id: string, activity: ActivityEntry[]): Promise<void>;
 }
 
 /**
