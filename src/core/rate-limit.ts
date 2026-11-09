@@ -10,8 +10,13 @@ export interface RateLimiter {
 }
 
 /**
- * Fixed-window, in-memory limiter. Good enough for one Node process. On Cloudflare each isolate keeps its own
- * counts, so a production deploy would swap this for the Workers Rate Limiting binding or a Durable Object.
+ * Fixed-window, in-memory limiter. Good enough for one Node process.
+ *
+ * Known limitation: on Cloudflare each isolate keeps its own counts, so limits there are per isolate, not
+ * global, and a restart clears them. The Workers Rate Limiting binding is not a drop-in fix: its period is
+ * only 10 or 60 seconds (these windows are 15 minutes), counts are per Cloudflare location and approximate,
+ * it is async, and it cannot be reset (a successful login clears the failure count). A strict global limit
+ * needs a Durable Object counter behind an async `RateLimiter`. That is deliberately not built here.
  *
  * Memory is bounded by `maxKeys`. A live window is never evicted. A Map iterates in insertion order and a key
  * is re-inserted whenever its window restarts, so expired windows sit at the front: when full, those are dropped
