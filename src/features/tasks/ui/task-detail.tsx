@@ -65,12 +65,21 @@ export function TaskDetail({ projectId, taskId, members, currentUserId, isOwner,
               {data.task.description && <p className="whitespace-pre-wrap">{data.task.description}</p>}
             </div>
 
-            <AttachmentsSection
-              projectId={projectId}
-              taskId={taskId}
-              attachments={data.attachments}
-              canDelete={(a) => isOwner || a.uploaderId === currentUserId}
-            />
+            {data.attachmentsEnabled ? (
+              <AttachmentsSection
+                projectId={projectId}
+                taskId={taskId}
+                attachments={data.attachments}
+                canDelete={(a) => isOwner || a.uploaderId === currentUserId}
+              />
+            ) : (
+              <section className="space-y-1" data-testid="attachments-disabled">
+                <h3 className="text-sm font-semibold">Files</h3>
+                <p className="text-sm text-muted">
+                  File attachments are turned off on this deployment (no file storage is configured).
+                </p>
+              </section>
+            )}
 
             <section className="space-y-3">
               <h3 className="text-sm font-semibold">Comments</h3>

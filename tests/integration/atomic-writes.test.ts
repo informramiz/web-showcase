@@ -41,7 +41,9 @@ describe("a change and its audit row are one atomic write", () => {
     const { db, projectId, task } = await setup();
     const tasks = createTaskRepository(db);
     await expect(
-      tasks.update(projectId, task.id, { title: "Changed", updatedAt: new Date() }, [entry(projectId, task.id, "ghost")]),
+      tasks.update(projectId, task.id, { title: "Changed", updatedAt: new Date() }, [
+        entry(projectId, task.id, "ghost"),
+      ]),
     ).rejects.toThrow();
     expect((await tasks.findById(projectId, task.id))?.title).toBe("Spec");
   });

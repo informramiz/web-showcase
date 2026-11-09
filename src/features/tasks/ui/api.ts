@@ -31,6 +31,8 @@ export interface TaskDetailJson {
   task: TaskJson;
   comments: CommentJson[];
   attachments: AttachmentJson[];
+  /** False when the deployment has no file storage; the UI then says so instead of offering uploads. */
+  attachmentsEnabled: boolean;
   activity: ActivityJson[];
 }
 

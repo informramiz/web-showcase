@@ -9,7 +9,8 @@ import type { Attachment, AttachmentRepository, AttachmentStorage, AttachmentVie
 
 export interface AttachmentDeps {
   attachments: AttachmentRepository;
-  storage: AttachmentStorage;
+  /** File bytes. Null when the deployment has no object storage: the feature is then off (see `enabled`). */
+  storage: AttachmentStorage | null;
   tasks: Pick<TaskRepository, "findById">;
   projectService: Pick<ProjectService, "authorize">;
   activity: ActivityLog;
@@ -31,13 +32,25 @@ export class AttachmentService {
     this.newId = deps.newId ?? (() => crypto.randomUUID());
   }
 
+  /** False when no storage is configured; uploads and downloads then answer 503 and the UI hides the feature. */
+  get enabled(): boolean {
+    return this.deps.storage !== null;
+  }
+
+  private requireStorage(): AttachmentStorage {
+    if (!this.deps.storage) throw new AppError("unavailable", "File attachments are not enabled on this deployment");
+    return this.deps.storage;
+  }
+
   async list(actor: User, projectId: string, taskId: string): Promise<AttachmentView[]> {
     await this.deps.projectService.authorize(actor, projectId, "project.view");
+    if (!this.enabled) return [];
     return this.deps.attachments.listForTask(projectId, taskId);
   }
 
   async upload(actor: User, projectId: string, taskId: string, file: UploadInput): Promise<AttachmentView> {
     await this.deps.projectService.authorize(actor, projectId, "attachment.create");
+    const storage = this.requireStorage();
     const name = cleanFileName(file.name);
     const contentType = baseContentType(file.contentType);
     const size = file.data.byteLength;
@@ -62,7 +75,7 @@ export class AttachmentService {
       createdAt: this.now(),
     };
     // Bytes first, then the row: a failed insert leaves no row pointing at a missing object.
-    await this.deps.storage.put(attachment.storageKey, file.data, contentType);
+    await storage.put(attachment.storageKey, file.data, contentType);
     const entry = this.deps.activity.prepare({
       projectId,
       taskId,
@@ -73,7 +86,7 @@ export class AttachmentService {
     try {
       await this.deps.attachments.insert(attachment, [entry]);
     } catch (e) {
-      await this.deleteObject(attachment.storageKey);
+      await this.deleteObject(storage, attachment.storageKey);
       throw e;
     }
     await this.deps.activity.publish([entry]);
@@ -82,8 +95,9 @@ export class AttachmentService {
 
   async download(actor: User, projectId: string, taskId: string, attachmentId: string): Promise<Download> {
     await this.deps.projectService.authorize(actor, projectId, "project.view");
+    const storage = this.requireStorage();
     const attachment = await this.find(projectId, taskId, attachmentId);
-    const body = await this.deps.storage.get(attachment.storageKey);
+    const body = await storage.get(attachment.storageKey);
     if (!body) throw new AppError("not_found", "Attachment not found");
     return { attachment, body };
   }
@@ -91,6 +105,7 @@ export class AttachmentService {
   /** The uploader can remove their own file; owners can remove any. */
   async delete(actor: User, projectId: string, taskId: string, attachmentId: string): Promise<void> {
     const role = await this.deps.projectService.authorize(actor, projectId, "project.view");
+    const storage = this.requireStorage();
     const attachment = await this.find(projectId, taskId, attachmentId);
     if (attachment.uploaderId !== actor.id && !can(role, "attachment.delete.any")) {
       throw new AppError("forbidden", "Only the uploader or a project owner can delete this file");
@@ -103,7 +118,7 @@ export class AttachmentService {
       detail: { name: attachment.name },
     });
     await this.deps.attachments.delete(attachment.id, [entry]);
-    await this.deleteObject(attachment.storageKey);
+    await this.deleteObject(storage, attachment.storageKey);
     await this.deps.activity.publish([entry]);
   }
 
@@ -114,9 +129,9 @@ export class AttachmentService {
   }
 
   /** An orphaned object costs storage, not correctness, so a failed cleanup is logged rather than surfaced. */
-  private async deleteObject(key: string): Promise<void> {
+  private async deleteObject(storage: AttachmentStorage, key: string): Promise<void> {
     try {
-      await this.deps.storage.delete(key);
+      await storage.delete(key);
     } catch (e) {
       console.error("attachment cleanup failed", key, e);
     }

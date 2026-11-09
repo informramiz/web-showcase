@@ -7,7 +7,8 @@ export type AppErrorKind =
   | "payment_required"
   | "length_required"
   | "too_large"
-  | "rate_limited";
+  | "rate_limited"
+  | "unavailable";
 
 const STATUS: Record<AppErrorKind, number> = {
   validation: 400,
@@ -19,6 +20,7 @@ const STATUS: Record<AppErrorKind, number> = {
   length_required: 411,
   too_large: 413,
   rate_limited: 429,
+  unavailable: 503,
 };
 
 /** A failure the domain expects and the transport layer maps to a response. */
