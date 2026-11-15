@@ -254,6 +254,18 @@ describe("webhook state transitions", () => {
     expect(await w.c.billing.status(w.owner)).toMatchObject({ status: "canceled" });
   });
 
+  it("a late cancel of a replaced subscription does not drop a user who is Pro on the new one", async () => {
+    const w = await billingWorld();
+    await w.deliver(checkout(w.owner.id)); // sub_1 active
+    await w.deliver(subChanged("evt_s1_unpaid", "unpaid", at(10)));
+    // The user buys a second subscription; it becomes the one the row follows.
+    await w.deliver(subChanged("evt_s2", "active", at(20), { subscriptionId: "sub_2" }));
+    expect(await w.c.billing.status(w.owner)).toMatchObject({ plan: "pro" });
+    // sub_1 is finally canceled by Stripe.
+    await w.deliver(subChanged("evt_s1_canceled", "canceled", at(30)));
+    expect(await w.c.billing.status(w.owner)).toMatchObject({ plan: "pro", status: "active" });
+  });
+
   it("an older read never overwrites a newer row", async () => {
     const w = await billingWorld();
     const sub = (status: string, sec: number) => ({

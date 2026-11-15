@@ -64,6 +64,34 @@ describe("AuthService", () => {
     });
   });
 
+  it("turns a lost sign-up race (unique index rejects the insert) into the same neutral error", async () => {
+    const now = { t: 0 };
+    const f = fakes();
+    // The lookup misses, then a concurrent request wins the insert.
+    let looked = false;
+    const racing: UserRepository = {
+      ...f.userRepo,
+      findByEmail: (email) => {
+        if (!looked) {
+          looked = true;
+          return Promise.resolve(null);
+        }
+        return f.userRepo.findByEmail(email);
+      },
+      insert: (u) => {
+        f.users.set("winner", { ...u, id: "winner" });
+        return Promise.reject(new Error("UNIQUE constraint failed: users.email"));
+      },
+    };
+    const auth = new AuthService({
+      users: racing,
+      sessions: f.sessionRepo,
+      hasher: plainHasher,
+      now: () => new Date(now.t),
+    });
+    await expect(auth.register(input)).rejects.toMatchObject({ kind: "validation", message: REGISTER_FAILED });
+  });
+
   it("runs exactly one password verify whether or not the email exists", async () => {
     const verified: string[] = [];
     const spy: PasswordHasher = {

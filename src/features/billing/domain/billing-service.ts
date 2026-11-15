@@ -118,6 +118,7 @@ export class BillingService implements PlanLimitsPolicy {
     if (!event.userId) return null;
     const existing = await this.deps.subscriptions.findByUser(event.userId);
     const subscriptionId = event.subscriptionId ?? existing?.subscriptionId ?? null;
+    const readAt = this.now();
     const state = subscriptionId
       ? await this.currentState(gateway, subscriptionId)
       : {
@@ -130,7 +131,7 @@ export class BillingService implements PlanLimitsPolicy {
       subscriptionId,
       status: state.status,
       currentPeriodEnd: state.currentPeriodEnd,
-      updatedAt: this.now(),
+      updatedAt: readAt,
     };
   }
 
@@ -143,14 +144,20 @@ export class BillingService implements PlanLimitsPolicy {
       (await this.deps.subscriptions.findByCustomer(event.customerId));
     const userId = existing?.userId ?? event.userId;
     if (!userId) return null; // Not one of ours (e.g. created outside this app).
+    // Taken before the read, so a handler that started reading earlier never carries a later time.
+    const readAt = this.now();
     const state = await this.currentState(gateway, event.subscriptionId);
+    // A user who re-subscribed (sub_2) keeps Pro when sub_1 later reports canceled: only a Pro-granting state may
+    // replace the subscription the row currently follows.
+    const other = existing?.subscriptionId && existing.subscriptionId !== event.subscriptionId;
+    if (other && planFor(existing.status) === "pro" && planFor(state.status) !== "pro") return null;
     return {
       userId,
       customerId: event.customerId,
       subscriptionId: event.subscriptionId,
       status: state.status,
       currentPeriodEnd: state.currentPeriodEnd,
-      updatedAt: this.now(),
+      updatedAt: readAt,
     };
   }
 

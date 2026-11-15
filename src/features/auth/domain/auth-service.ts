@@ -65,7 +65,15 @@ export class AuthService {
       passwordHash: await this.deps.hasher.hash(data.password),
       createdAt: this.now(),
     };
-    await this.deps.users.insert(user);
+    try {
+      await this.deps.users.insert(user);
+    } catch (error) {
+      // Two simultaneous sign-ups with one email: the unique index rejects the loser, who gets the normal form error.
+      if (await this.deps.users.findByEmail(data.email)) {
+        throw new AppError("validation", REGISTER_FAILED, { email: [REGISTER_FAILED] });
+      }
+      throw error;
+    }
     return this.startSession(toUser(user));
   }
 
