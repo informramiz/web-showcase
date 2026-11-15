@@ -144,7 +144,7 @@ export const subscriptions = sqliteTable("subscriptions", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
-/** Stripe event ids already handled, so redelivered webhooks are no-ops. */
+/** Audit record of Stripe events applied, written atomically with the subscription change they caused. */
 export const stripeEvents = sqliteTable("stripe_events", {
   id: text("id").primaryKey(),
   type: text("type").notNull(),

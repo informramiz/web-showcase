@@ -2,7 +2,7 @@
 
 A multi-user project and task tracker built with Next.js 16, Drizzle and TanStack Query, following the official Next.js guides for auth, data security and data fetching.
 
-**Live demo:** [teamboard-showcase.pingappslab.workers.dev](https://teamboard-showcase.pingappslab.workers.dev) (Cloudflare Workers + D1). Demo login: `demo@teamboard.dev` / `demo1234`. The demo data is shared and reset from time to time.
+**Live demo:** [teamboard.codebyramiz.com](https://teamboard.codebyramiz.com) (Cloudflare Workers + D1). Demo login: `demo@teamboard.dev` / `demo1234`. The demo data is shared and reset from time to time.
 
 Sign up, create projects, invite teammates, and move tasks across a Kanban board or work through them in a filtered list.
 
@@ -224,7 +224,7 @@ npm run build
 npm run test:e2e      # builds must exist; starts next on :3100 with a fresh seeded database
 ```
 
-178 Vitest tests in 20 files:
+166 Vitest tests in 21 files:
 
 - **Unit tests** run the services against in-memory fakes: auth (timing-safe login, both rate limits, the full-store cases, session expiry and renewal), permissions, the rate limiter, crypto, action-state mapping, the Origin check, due-date labels, realtime tickets (signature, expiry, tampering), the Durable Object room logic, the FTS query builder, attachment limits, activity text and the Stripe gateway (signed fixtures, event mapping, request bodies through a fake `fetch`).
 - **Integration tests** run the services and route handlers against real Drizzle repositories on in-memory SQLite. They cover ordering, filters, FTS search, pagination, assignee rules, owner-only deletes, outsiders getting 404, cross-project isolation, cross-site requests getting 403, HTTP status mapping, comments and the audit log, attachment upload, download and size limits, realtime events and revocation, and billing (webhook signature, body cap, atomic event recording, out-of-order, same-second and concurrent events, plan limits, and concurrent creates and invites that can't exceed a limit).
@@ -281,7 +281,7 @@ npm run db:migrate:remote                   # apply drizzle/*.sql to D1
 npm run db:seed:remote                      # reset D1 to the demo data
 npm run preview                             # build and run the worker locally (local D1)
 npm run deploy                              # build and deploy; the ProjectRoom DO migration (v1) applies here
-E2E_BASE_URL=https://teamboard-showcase.pingappslab.workers.dev npx playwright test board   # smoke-test the deploy
+E2E_BASE_URL=https://teamboard.codebyramiz.com npx playwright test board   # smoke-test the deploy
 npm run db:seed:remote                      # reset the demo data the smoke test touched
 ```
 
@@ -297,11 +297,11 @@ For `npm run preview`, apply migrations and the seed locally first (the same com
 - **No interactive transactions.** D1 doesn't support them, so nothing reads inside a transaction: positions are fractional, and every multi-row write (a change plus its audit row, a webhook event plus the subscription) is one atomic `batch()` (see Atomic writes below).
 - **Plan limits are one conditional statement.** `INSERT ... SELECT ... WHERE (SELECT count(*) ...) < :limit` does the count and the insert together, on SQLite and D1, so concurrent requests can't go over a limit. Zero rows inserted means the limit was reached (402). A refused project create deletes the project row it just added.
 - **Limits follow the owner's plan.** Members invited to a Pro owner's project don't need Pro themselves.
-- **Webhooks: signal, then read back.** Stripe can deliver events twice and out of order, and `created` has one-second resolution (Stripe tells you not to order by it). So an event only triggers a read of the subscription's current state from Stripe, which is stored with its read time; a database-level condition keeps an older read from overwriting a newer row. Replays and reordered or concurrent deliveries all converge on Stripe's latest state. `past_due` keeps Pro while Stripe retries the payment. `canceled`, `unpaid` and `incomplete` fall back to Free.
+- **Webhooks: signal, then read back.** Stripe can deliver events twice and out of order, and `created` has one-second resolution (Stripe tells you not to order by it). So an event only triggers a read of the subscription's current state from Stripe, which is stored with its read time; a database-level condition keeps an older read from overwriting a newer row. Replays and reordered deliveries converge on Stripe's latest state; the read time is taken before the request, which narrows (but with several isolates reading at once cannot fully close) the window for a stale read to win. A second subscription of the same user (re-subscribing) is tracked by the row, and a late cancel of the old one does not drop a user who is Pro on the new one. `past_due` keeps Pro while Stripe retries the payment. `canceled`, `unpaid` and `incomplete` fall back to Free.
 - **Realtime sends "something changed", not data.** Events carry IDs only, and clients refetch through the normal authorized API. A missed event costs one refetch, not a wrong board.
 - **SSE locally, Durable Objects on Cloudflare.** Workers isolates don't share memory, so one Durable Object per project is the meeting point. Hibernating WebSockets keep idle rooms free. Node has one process, so an in-memory bus with SSE is enough there. Polling is the fallback for both.
 - **R2 versus filesystem behind one port.** `AttachmentStorage` has `put`, `get` and `delete`. Metadata is in the database, so listing never touches storage. A failed database write after an upload deletes the blob. With no storage configured (`null`) the service reports `enabled: false`.
-- **Atomic writes.** A change and its audit row are written in one D1 `batch()` (one implicit transaction, no interactive transactions on D1) or one `better-sqlite3` transaction locally, through `atomically()` in `src/db/atomic.ts`. Either both rows exist or neither. Realtime publishing happens after the commit and is best-effort. Deleting a task or project removes its stored files after the database delete succeeds; if an object removal fails it is logged and the object is orphaned (storage cost, no data exposure, since rows and keys are gone).
+- **Atomic writes.** A change and its audit row are written in one D1 `batch()` (one implicit transaction, no interactive transactions on D1) or one `better-sqlite3` transaction locally, through `atomically()` in `src/db/atomic.ts`. Either both rows exist or neither. Realtime publishing happens after the commit and is best-effort. Deleting a task removes its stored files after the database delete succeeds (the project-delete service path does the same, but no route or screen exposes project deletion); if an object removal fails it is logged and the object is orphaned (storage cost, no data exposure, since rows and keys are gone).
 - **Demo entry is a POST.** `POST /api/demo` starts the shared demo session (CSRF-checked, 303 to `/projects`). `GET` returns 405, so prefetchers and crawlers can't create sessions. The landing page and the login page post a form to it.
 - **Drag and drop is HTML5 with a select fallback.** No drag library. Touch screens don't fire HTML5 drag events, so each card has a "Move" select, which also covers keyboard users.
 - **`proxy.ts` only checks that a cookie exists.** It saves a render for signed-out visitors and refreshes the cookie expiry, but never touches the database. The session is validated in the DAL on every page, action and API call.
