@@ -52,16 +52,15 @@ export function TaskWorkspace({ projectId, members, role, currentUserId }: Props
       : { search, assigneeId, status: status || undefined, page, pageSize: LIST_PAGE_SIZE };
   const { data, isPending, isError, error, isFetching } = useTasks(projectId, query);
 
-  const realtime = useProjectEvents(projectId, currentUserId);
+  const realtime = useProjectEvents(projectId);
   const create = useCreateTask(projectId, currentUserId);
   const update = useUpdateTask(projectId);
   const remove = useDeleteTask(projectId);
   const mutationError = create.error ?? update.error ?? remove.error;
 
   const move = (task: TaskJson, to: TaskStatus) => {
-    // Optimistically drop it at the bottom of the target column; the server computes the same position.
-    const bottom = Math.max(0, ...(data?.items ?? []).filter((t) => t.status === to).map((t) => t.position)) + 1;
-    update.mutate({ id: task.id, patch: { status: to, position: bottom } });
+    // No position: the server appends to the column, which a filtered or paginated list can't see in full.
+    update.mutate({ id: task.id, patch: { status: to } });
   };
 
   const [title, setTitle] = useState("");

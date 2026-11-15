@@ -36,6 +36,20 @@ export function createAttachmentRepository(db: Db): AttachmentRepository {
         .where(and(eq(attachments.projectId, projectId), eq(attachments.taskId, taskId)))
         .orderBy(asc(attachments.createdAt), asc(sql`${attachments}.rowid`));
     },
+    async storageKeysForTask(projectId, taskId) {
+      const rows = await db
+        .select({ key: attachments.storageKey })
+        .from(attachments)
+        .where(and(eq(attachments.projectId, projectId), eq(attachments.taskId, taskId)));
+      return rows.map((r) => r.key);
+    },
+    async storageKeysForProject(projectId) {
+      const rows = await db
+        .select({ key: attachments.storageKey })
+        .from(attachments)
+        .where(eq(attachments.projectId, projectId));
+      return rows.map((r) => r.key);
+    },
     async delete(id, entries) {
       await atomically(db, [db.delete(attachments).where(eq(attachments.id, id)), ...activityInserts(db, entries)]);
     },

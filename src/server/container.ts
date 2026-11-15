@@ -1,6 +1,7 @@
 import type { Db } from "@/db/types";
 import { ActivityService } from "@/features/activity/domain/activity-service";
 import { createActivityRepository } from "@/features/activity/data/drizzle-activity-repository";
+import { createAttachmentReaper } from "@/features/attachments/domain/attachment-reaper";
 import { AttachmentService } from "@/features/attachments/domain/attachment-service";
 import type { AttachmentStorage } from "@/features/attachments/domain/types";
 import { createAttachmentRepository } from "@/features/attachments/data/drizzle-attachment-repository";
@@ -66,13 +67,16 @@ export function createContainer(db: Db, options: ContainerOptions = {}): Contain
     subscriptions: createSubscriptionRepository(db),
     gateway: options.billing ?? null,
   });
-  const projects = new ProjectService({ projects: projectRepo, users, events, planLimits: billing });
+  const attachmentRepo = createAttachmentRepository(db);
+  const storage = options.storage === undefined ? createMemoryStorage() : options.storage;
+  const reaper = createAttachmentReaper(attachmentRepo, storage);
+  const projects = new ProjectService({ projects: projectRepo, users, events, planLimits: billing, reaper });
   const activity = new ActivityService({
     activity: createActivityRepository(db),
     projectService: projects,
     events,
   });
-  const tasks = new TaskService({ tasks: taskRepo, projects: projectRepo, projectService: projects, activity });
+  const tasks = new TaskService({ tasks: taskRepo, projects: projectRepo, projectService: projects, activity, reaper });
   const comments = new CommentService({
     comments: createCommentRepository(db),
     tasks: taskRepo,
@@ -80,8 +84,8 @@ export function createContainer(db: Db, options: ContainerOptions = {}): Contain
     activity,
   });
   const attachments = new AttachmentService({
-    attachments: createAttachmentRepository(db),
-    storage: options.storage === undefined ? createMemoryStorage() : options.storage,
+    attachments: attachmentRepo,
+    storage,
     tasks: taskRepo,
     projectService: projects,
     activity,

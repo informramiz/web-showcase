@@ -21,6 +21,18 @@ export interface AttachmentRepository {
   findById(projectId: string, id: string): Promise<Attachment | undefined>;
   listForTask(projectId: string, taskId: string): Promise<AttachmentView[]>;
   delete(id: string, activity: ActivityEntry[]): Promise<void>;
+  /** Storage keys of every file on a task, or in a whole project. Read before a delete cascades the rows away. */
+  storageKeysForTask(projectId: string, taskId: string): Promise<string[]>;
+  storageKeysForProject(projectId: string): Promise<string[]>;
+}
+
+/**
+ * Lets task and project deletes clean up file bytes. Database cascades remove the attachment rows, but not the
+ * objects, so the keys are read first and the returned function removes the objects after the delete succeeded.
+ */
+export interface AttachmentReaper {
+  forTask(projectId: string, taskId: string): Promise<() => Promise<void>>;
+  forProject(projectId: string): Promise<() => Promise<void>>;
 }
 
 /**

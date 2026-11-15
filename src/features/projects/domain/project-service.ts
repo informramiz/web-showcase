@@ -1,5 +1,6 @@
 import { AppError } from "@/core/errors";
 import { parseInput } from "@/core/validation";
+import type { AttachmentReaper } from "@/features/attachments/domain/types";
 import type { User, UserRepository } from "@/features/auth/domain/types";
 import { unlimitedPolicy, type PlanLimitsPolicy } from "@/features/billing/domain/plans";
 import { noopEvents, type ProjectEvents } from "@/features/realtime/domain/types";
@@ -14,6 +15,8 @@ export interface ProjectDeps {
   events?: Pick<ProjectEvents, "revoke">;
   /** Plan limits (billing). Defaults to unlimited. */
   planLimits?: PlanLimitsPolicy;
+  /** Removes file objects once their project is gone. */
+  reaper?: Pick<AttachmentReaper, "forProject">;
   now?: () => Date;
   newId?: () => string;
 }
@@ -72,7 +75,9 @@ export class ProjectService {
 
   async delete(actor: User, projectId: string): Promise<void> {
     await this.authorize(actor, projectId, "project.delete");
+    const reap = (await this.deps.reaper?.forProject(projectId)) ?? (() => Promise.resolve());
     await this.deps.projects.delete(projectId);
+    await reap();
   }
 
   async addMember(actor: User, projectId: string, input: unknown): Promise<Member> {

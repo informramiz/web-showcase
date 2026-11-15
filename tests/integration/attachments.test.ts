@@ -74,6 +74,17 @@ describe("attachments", () => {
     });
   });
 
+  it("removes the stored files when their task or project is deleted", async () => {
+    await w.c.attachments.upload(w.member, w.projectId, taskId, file());
+    const other = (await w.c.tasks.create(w.owner, w.projectId, { title: "Other" })).id;
+    const kept = await w.c.attachments.upload(w.member, w.projectId, other, file({ name: "keep.txt" }));
+    expect(storage.keys()).toHaveLength(2);
+    await w.c.tasks.delete(w.owner, w.projectId, taskId);
+    expect(storage.keys()).toEqual([kept.storageKey]);
+    await w.c.projects.delete(w.owner, w.projectId);
+    expect(storage.keys()).toEqual([]);
+  });
+
   it("lets the uploader or an owner delete, nobody else", async () => {
     const byOwner = await w.c.attachments.upload(w.owner, w.projectId, taskId, file({ name: "owner.txt" }));
     const byMember = await w.c.attachments.upload(w.member, w.projectId, taskId, file({ name: "member.txt" }));

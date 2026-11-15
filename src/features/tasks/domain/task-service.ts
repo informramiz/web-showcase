@@ -1,5 +1,6 @@
 import { AppError } from "@/core/errors";
 import { parseInput } from "@/core/validation";
+import type { AttachmentReaper } from "@/features/attachments/domain/types";
 import type { ActivityEntry, ActivityLog } from "@/features/activity/domain/types";
 import type { User } from "@/features/auth/domain/types";
 import type { ProjectRepository } from "@/features/projects/domain/types";
@@ -15,6 +16,8 @@ export interface TaskDeps {
   projectService: Pick<ProjectService, "authorize">;
   /** Audit trail; also what drives realtime notifications. */
   activity: ActivityLog;
+  /** Removes file objects once their task is gone. Absent when there are no attachments to clean up. */
+  reaper?: Pick<AttachmentReaper, "forTask">;
   now?: () => Date;
   newId?: () => string;
 }
@@ -97,7 +100,9 @@ export class TaskService {
       action: "task.deleted",
       detail: { name: existing.title },
     });
+    const reap = (await this.deps.reaper?.forTask(projectId, taskId)) ?? (() => Promise.resolve());
     await this.deps.tasks.delete(projectId, taskId, [entry]);
+    await reap();
     await this.deps.activity.publish([entry]);
   }
 

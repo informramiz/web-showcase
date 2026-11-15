@@ -6,18 +6,18 @@ export interface Subscription {
   /** Stripe subscription status, e.g. active, past_due, canceled. */
   status: string;
   currentPeriodEnd: Date | null;
-  /** Time of the Stripe event that produced this state; older events are ignored. */
+  /** When this state was read from Stripe; a write carrying an older time never replaces a newer row. */
   updatedAt: Date;
 }
 
 export interface SubscriptionRepository {
   findByUser(userId: string): Promise<Subscription | null>;
   findByCustomer(customerId: string): Promise<Subscription | null>;
-  upsert(subscription: Subscription): Promise<void>;
-  /** Records a Stripe event id; false if it was already recorded (Stripe delivers at least once). */
-  claimEvent(eventId: string, type: string, receivedAt: Date): Promise<boolean>;
-  /** Forgets a claimed event whose handling failed, so Stripe's retry is applied. */
-  releaseEvent(eventId: string): Promise<void>;
+  /**
+   * Stores the new state and records the Stripe event id in one atomic write, so a crash can never leave an
+   * event marked handled without its effect. A row whose `updatedAt` is newer than the incoming one is kept.
+   */
+  apply(event: { id: string; type: string; receivedAt: Date }, subscription: Subscription): Promise<void>;
 }
 
 /** Stripe events reduced to what the domain needs. Everything else is "ignored". */
@@ -44,6 +44,12 @@ export type BillingEvent =
     }
   | { kind: "ignored"; id: string; type: string };
 
+export interface RemoteSubscription {
+  customerId: string;
+  status: string;
+  currentPeriodEnd: Date | null;
+}
+
 /** Outbound port to the payment provider. */
 export interface BillingGateway {
   createCheckoutSession(input: {
@@ -56,4 +62,10 @@ export interface BillingGateway {
   createPortalSession(input: { customerId: string; returnUrl: string }): Promise<string>;
   /** Verifies the signature over the raw body and parses the event; throws on a bad signature. */
   parseWebhook(rawBody: string, signature: string): Promise<BillingEvent>;
+  /**
+   * Current state of a subscription straight from Stripe, or null when it no longer exists. Webhooks only say
+   * "something changed": Stripe does not guarantee delivery order and `created` has one-second resolution, so the
+   * state is always read back instead of being taken from the event.
+   */
+  retrieveSubscription(subscriptionId: string): Promise<RemoteSubscription | null>;
 }

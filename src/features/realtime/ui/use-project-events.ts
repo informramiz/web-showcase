@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import type { ProjectEvent, RealtimeConnection } from "../domain/types";
+import type { RealtimeConnection } from "../domain/types";
 
 export type RealtimeStatus = "connecting" | "live" | "polling";
 
@@ -18,7 +18,7 @@ const FALLBACK_POLL_MS = 10_000;
  * Keeps a project's task queries fresh while the page is open. Events only say "something changed"; the hook
  * invalidates the cached queries and React Query refetches through the normal authorized API.
  */
-export function useProjectEvents(projectId: string, currentUserId: string): RealtimeStatus {
+export function useProjectEvents(projectId: string): RealtimeStatus {
   const qc = useQueryClient();
   const [status, setStatus] = useState<RealtimeStatus>("connecting");
 
@@ -32,11 +32,9 @@ export function useProjectEvents(projectId: string, currentUserId: string): Real
       void qc.invalidateQueries({ queryKey: ["tasks", projectId] });
       void qc.invalidateQueries({ queryKey: ["task-detail", projectId] });
     };
-    const onEvent = (data: string) => {
-      const event = JSON.parse(data) as ProjectEvent;
-      // Our own mutations already invalidate on success.
-      if (event.actorId !== currentUserId) refresh();
-    };
+    // Every event refreshes, including ones this user caused: the same account may be open in another tab or device
+    // (the shared demo login always is), and each tab has its own cache. React Query dedups concurrent refetches.
+    const onEvent = refresh;
     const poll = (intervalMs: number) => {
       setStatus("polling");
       const id = setInterval(refresh, intervalMs);
@@ -72,7 +70,7 @@ export function useProjectEvents(projectId: string, currentUserId: string): Real
       if (descriptor.transport === "sse") {
         const source = new EventSource(descriptor.url);
         source.onopen = opened;
-        source.onmessage = (e: MessageEvent<string>) => onEvent(e.data);
+        source.onmessage = onEvent;
         // EventSource reconnects by itself, but our fresh-descriptor + backoff policy is easier to reason about.
         source.onerror = retry;
         teardown = () => source.close();
@@ -86,7 +84,7 @@ export function useProjectEvents(projectId: string, currentUserId: string): Real
       }, SOCKET_PING_MS);
       socket.onopen = opened;
       socket.onmessage = (e: MessageEvent<string>) => {
-        if (e.data !== "pong") onEvent(e.data);
+        if (e.data !== "pong") onEvent();
       };
       socket.onclose = retry;
       teardown = () => {
@@ -102,7 +100,7 @@ export function useProjectEvents(projectId: string, currentUserId: string): Real
       clearTimeout(retryTimer);
       teardown();
     };
-  }, [qc, projectId, currentUserId]);
+  }, [qc, projectId]);
 
   return status;
 }

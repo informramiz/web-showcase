@@ -5,10 +5,11 @@ import * as checkoutRoute from "@/app/api/billing/checkout/route";
 import * as portalRoute from "@/app/api/billing/portal/route";
 import * as webhookRoute from "@/app/api/billing/webhook/route";
 import { SESSION_COOKIE } from "@/features/auth/server/cookie";
-import type { BillingEvent, BillingGateway } from "@/features/billing/domain/types";
+import type { BillingEvent, BillingGateway, RemoteSubscription } from "@/features/billing/domain/types";
 import { setContainer } from "@/server/runtime";
 import { openSqlite } from "@/db/sqlite";
-import { projects } from "@/db/schema";
+import { projects, stripeEvents } from "@/db/schema";
+import { createSubscriptionRepository } from "@/features/billing/data/drizzle-subscription-repository";
 import { createContainer } from "@/server/container";
 import { makeWorld, plainHasher, type World } from "../helpers/setup";
 
@@ -23,6 +24,8 @@ const sigFor = (id: string) => `t=1767225600,v1=${Buffer.from(id).toString("hex"
 
 class FakeGateway implements BillingGateway {
   readonly events = new Map<string, BillingEvent>();
+  /** Stripe's current state per subscription id. `sign` advances it with each event, newest `createdAt` winning. */
+  readonly remote = new Map<string, RemoteSubscription & { version: number }>();
   readonly checkouts: Parameters<BillingGateway["createCheckoutSession"]>[0][] = [];
 
   createCheckoutSession(input: Parameters<BillingGateway["createCheckoutSession"]>[0]) {
@@ -37,9 +40,27 @@ class FakeGateway implements BillingGateway {
     const event = this.events.get(Buffer.from(v1, "hex").toString());
     return event ? Promise.resolve(event) : Promise.reject(new Error("No signatures found matching"));
   }
-  /** Registers an event and returns the signature header for it. */
+  retrieveSubscription(id: string) {
+    return Promise.resolve(this.remote.get(id) ?? null);
+  }
+  /** Registers an event (moving Stripe's state forward the way the real event would) and returns its signature header. */
   sign(event: BillingEvent): string {
     this.events.set(event.id, event);
+    if (
+      (event.kind === "checkout.completed" && event.paid && event.subscriptionId) ||
+      event.kind === "subscription.changed"
+    ) {
+      const id = event.subscriptionId!;
+      const version = event.createdAt.getTime();
+      if (version > (this.remote.get(id)?.version ?? -1)) {
+        this.remote.set(id, {
+          customerId: event.customerId,
+          status: event.kind === "subscription.changed" ? event.status : "active",
+          currentPeriodEnd: event.kind === "subscription.changed" ? event.currentPeriodEnd : null,
+          version,
+        });
+      }
+    }
     return sigFor(event.id);
   }
 }
@@ -179,13 +200,13 @@ describe("webhook state transitions", () => {
     expect(await w.c.billing.status(w.owner)).toMatchObject({ status: "canceled" });
   });
 
-  it("applies a duplicate delivery once", async () => {
+  it("a redelivered old event does not roll back newer state", async () => {
     const w = await billingWorld();
     await w.deliver(checkout(w.owner.id));
     await w.deliver(subChanged("evt_cancel", "canceled", at(20)));
     // Re-subscribe through a newer event, then Stripe redelivers the old cancel with the same id.
     await w.deliver(subChanged("evt_again", "active", at(30)));
-    await w.deliver(subChanged("evt_cancel", "canceled", at(40)));
+    await w.deliver(subChanged("evt_cancel", "canceled", at(20)));
     expect(await w.c.billing.status(w.owner)).toMatchObject({ status: "active" });
   });
 
@@ -196,13 +217,57 @@ describe("webhook state transitions", () => {
     expect(await w.c.billing.status(w.owner)).toMatchObject({ canManage: false });
   });
 
-  it("releases the claim when applying fails, so Stripe's retry is applied", async () => {
+  it("records the event and its state change in one atomic write", async () => {
     const w = await billingWorld();
-    const event = checkout(w.owner.id, { userId: "no-such-user" }); // FK violation on insert
+    const event = checkout(w.owner.id, { userId: "no-such-user" }); // FK violation on the subscription insert
     await expect(w.deliver(event)).rejects.toThrow();
+    expect(await w.db.select().from(stripeEvents)).toHaveLength(0); // no claim without its effect
     w.gw.events.set(event.id, { ...event, userId: w.owner.id } as BillingEvent);
     await w.c.billing.handleWebhook("{}", sigFor(event.id));
     expect(await w.c.billing.status(w.owner)).toMatchObject({ plan: "pro" });
+    expect(await w.db.select().from(stripeEvents)).toHaveLength(1);
+  });
+
+  it("distinct events in the same second cannot restore a canceled subscription", async () => {
+    const w = await billingWorld();
+    await w.deliver(checkout(w.owner.id));
+    // Stripe's latest state is canceled; the delayed `active` event carries the same `created` second.
+    w.gw.remote.set("sub_1", {
+      customerId: "cus_1",
+      status: "canceled",
+      currentPeriodEnd: null,
+      version: at(20).getTime(),
+    });
+    await w.deliver(subChanged("evt_late_active", "active", at(20)));
+    expect(await w.c.billing.status(w.owner)).toMatchObject({ plan: "free", status: "canceled" });
+  });
+
+  it("concurrent deliveries converge on Stripe's state", async () => {
+    const w = await billingWorld();
+    await w.deliver(checkout(w.owner.id));
+    const events = [
+      subChanged("evt_a", "past_due", at(10)),
+      subChanged("evt_b", "canceled", at(20)),
+      subChanged("evt_c", "active", at(15)),
+    ];
+    await Promise.all(events.map((e) => w.deliver(e)));
+    expect(await w.c.billing.status(w.owner)).toMatchObject({ status: "canceled" });
+  });
+
+  it("an older read never overwrites a newer row", async () => {
+    const w = await billingWorld();
+    const sub = (status: string, sec: number) => ({
+      userId: w.owner.id,
+      customerId: "cus_1",
+      subscriptionId: "sub_1",
+      status,
+      currentPeriodEnd: null,
+      updatedAt: at(sec),
+    });
+    const repo = createSubscriptionRepository(w.db);
+    await repo.apply({ id: "e1", type: "t", receivedAt: at(5) }, sub("canceled", 5));
+    await repo.apply({ id: "e2", type: "t", receivedAt: at(1) }, sub("active", 1));
+    expect((await repo.findByUser(w.owner.id))?.status).toBe("canceled");
   });
 
   it("rejects a missing or invalid signature as a validation error", async () => {
