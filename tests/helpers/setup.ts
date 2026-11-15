@@ -10,6 +10,7 @@ export const plainHasher: PasswordHasher = {
 
 export interface World {
   c: Container;
+  db: ReturnType<typeof openSqlite>;
   owner: User;
   member: User;
   outsider: User;
@@ -18,7 +19,8 @@ export interface World {
 
 /** A fresh in-memory database with three users and one project (owner + member). */
 export async function makeWorld(options: ContainerOptions = {}): Promise<World> {
-  const c = createContainer(openSqlite(":memory:"), { hasher: plainHasher, ...options });
+  const db = openSqlite(":memory:");
+  const c = createContainer(db, { hasher: plainHasher, ...options });
   const reg = async (name: string) =>
     (await c.auth.register({ name, email: `${name.toLowerCase()}@test.dev`, password: "password1" })).user;
   const owner = await reg("Olivia");
@@ -26,5 +28,5 @@ export async function makeWorld(options: ContainerOptions = {}): Promise<World> 
   const outsider = await reg("Otto");
   const project = await c.projects.create(owner, { name: "Alpha" });
   await c.projects.addMember(owner, project.id, { email: member.email });
-  return { c, owner, member, outsider, projectId: project.id };
+  return { c, db, owner, member, outsider, projectId: project.id };
 }

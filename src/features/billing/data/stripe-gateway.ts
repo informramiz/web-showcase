@@ -47,6 +47,20 @@ export function createStripeGateway(config: StripeGatewayConfig): BillingGateway
       return session.url;
     },
 
+    async retrieveSubscription(subscriptionId) {
+      try {
+        const sub = await stripe.subscriptions.retrieve(subscriptionId);
+        return {
+          customerId: idOf(sub.customer) ?? "",
+          status: sub.status,
+          currentPeriodEnd: fromUnix(sub.items.data[0]?.current_period_end),
+        };
+      } catch (error) {
+        if (error instanceof Stripe.errors.StripeInvalidRequestError && error.code === "resource_missing") return null;
+        throw error;
+      }
+    },
+
     async parseWebhook(rawBody, signature): Promise<BillingEvent> {
       const event = await stripe.webhooks.constructEventAsync(
         rawBody,

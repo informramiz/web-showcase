@@ -31,3 +31,26 @@ test("a task created by one member appears on another member's board without a r
     await sam.close();
   }
 });
+
+test("the same account in two sessions sees each other's changes (the shared demo login)", async ({ browser }) => {
+  const one = await browser.newContext();
+  const two = await browser.newContext();
+  try {
+    const a = await one.newPage();
+    const b = await two.newPage();
+    await openBoard(a, "demo@teamboard.dev", "Website relaunch");
+    await openBoard(b, "demo@teamboard.dev", "Website relaunch");
+    await expect(a.getByTestId("realtime-status")).toHaveText("Live");
+    await expect(b.getByTestId("realtime-status")).toHaveText("Live");
+
+    const title = `Same account ${String(Date.now())}`;
+    await a.getByLabel("New task title").fill(title);
+    await a.getByLabel("New task title").press("Enter");
+    await expect(b.getByTestId("column-todo").getByTestId("task-card").filter({ hasText: title })).toBeVisible({
+      timeout: 10_000,
+    });
+  } finally {
+    await one.close();
+    await two.close();
+  }
+});

@@ -82,8 +82,10 @@ export class BillingService implements PlanLimitsPolicy {
   }
 
   /**
-   * Applies a signed Stripe webhook. Idempotent (each event id is applied once) and order-tolerant (an event
-   * older than the stored state is skipped), because Stripe retries and does not guarantee delivery order.
+   * Applies a signed Stripe webhook. Stripe retries and does not guarantee delivery order, and `created` only has
+   * one-second resolution, so the event is treated as a "something changed" signal: the subscription's current
+   * state is read back from Stripe and written with its read time. Replays and reordered events therefore converge
+   * on Stripe's latest state, and the event id is recorded in the same atomic write as the state it caused.
    */
   async handleWebhook(rawBody: string, signature: string | null): Promise<void> {
     const gateway = this.requireGateway();
@@ -95,49 +97,61 @@ export class BillingService implements PlanLimitsPolicy {
       throw new AppError("validation", "Invalid webhook signature");
     }
     if (event.kind === "ignored") return;
-    if (!(await this.deps.subscriptions.claimEvent(event.id, event.kind, this.now()))) return;
-    try {
-      await (event.kind === "checkout.completed" ? this.onCheckout(event) : this.onSubscription(event));
-    } catch (error) {
-      await this.deps.subscriptions.releaseEvent(event.id);
-      throw error;
-    }
+    const type = event.kind;
+    const next =
+      event.kind === "checkout.completed"
+        ? await this.onCheckout(gateway, event)
+        : await this.onSubscription(gateway, event);
+    if (next) await this.deps.subscriptions.apply({ id: event.id, type, receivedAt: this.now() }, next);
   }
 
-  private async onCheckout(event: Extract<BillingEvent, { kind: "checkout.completed" }>): Promise<void> {
-    if (!event.userId) return;
+  /** The state to store for a subscription id: Stripe's current one, or `canceled` when Stripe no longer has it. */
+  private async currentState(gateway: BillingGateway, subscriptionId: string) {
+    const remote = await gateway.retrieveSubscription(subscriptionId);
+    return remote ?? { status: "canceled", currentPeriodEnd: null };
+  }
+
+  private async onCheckout(
+    gateway: BillingGateway,
+    event: Extract<BillingEvent, { kind: "checkout.completed" }>,
+  ): Promise<Subscription | null> {
+    if (!event.userId) return null;
     const existing = await this.deps.subscriptions.findByUser(event.userId);
-    if (existing && existing.updatedAt > event.createdAt) {
-      // A newer subscription event already set the status; only fill in the link.
-      await this.deps.subscriptions.upsert({ ...existing, customerId: event.customerId });
-      return;
-    }
-    await this.deps.subscriptions.upsert({
+    const subscriptionId = event.subscriptionId ?? existing?.subscriptionId ?? null;
+    const state = subscriptionId
+      ? await this.currentState(gateway, subscriptionId)
+      : {
+          status: event.paid ? "active" : (existing?.status ?? "incomplete"),
+          currentPeriodEnd: existing?.currentPeriodEnd ?? null,
+        };
+    return {
       userId: event.userId,
       customerId: event.customerId,
-      subscriptionId: event.subscriptionId ?? existing?.subscriptionId ?? null,
-      status: event.paid ? "active" : (existing?.status ?? "incomplete"),
-      currentPeriodEnd: existing?.currentPeriodEnd ?? null,
-      updatedAt: event.createdAt,
-    });
+      subscriptionId,
+      status: state.status,
+      currentPeriodEnd: state.currentPeriodEnd,
+      updatedAt: this.now(),
+    };
   }
 
-  private async onSubscription(event: Extract<BillingEvent, { kind: "subscription.changed" }>): Promise<void> {
+  private async onSubscription(
+    gateway: BillingGateway,
+    event: Extract<BillingEvent, { kind: "subscription.changed" }>,
+  ): Promise<Subscription | null> {
     const existing =
       (event.userId ? await this.deps.subscriptions.findByUser(event.userId) : null) ??
       (await this.deps.subscriptions.findByCustomer(event.customerId));
     const userId = existing?.userId ?? event.userId;
-    if (!userId) return; // Not one of ours (e.g. created outside this app).
-    if (existing && existing.updatedAt > event.createdAt) return;
-    const next: Subscription = {
+    if (!userId) return null; // Not one of ours (e.g. created outside this app).
+    const state = await this.currentState(gateway, event.subscriptionId);
+    return {
       userId,
       customerId: event.customerId,
       subscriptionId: event.subscriptionId,
-      status: event.status,
-      currentPeriodEnd: event.currentPeriodEnd,
-      updatedAt: event.createdAt,
+      status: state.status,
+      currentPeriodEnd: state.currentPeriodEnd,
+      updatedAt: this.now(),
     };
-    await this.deps.subscriptions.upsert(next);
   }
 
   private requireGateway(): BillingGateway {

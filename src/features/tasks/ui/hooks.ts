@@ -43,7 +43,21 @@ export function useUpdateTask(projectId: string) {
   return useOptimistic(
     projectId,
     ({ id, patch }: { id: string; patch: TaskUpdate }) => tasksApi.update(projectId, id, patch),
-    (page, { id, patch }) => ({ ...page, items: page.items.map((t) => (t.id === id ? { ...t, ...patch } : t)) }),
+    (page, { id, patch }) => {
+      // A move sent without a position is appended by the server, which sees the whole column. Here the card only
+      // needs to land below what is cached; the refetch after the request settles shows the stored position.
+      const cachedBottom = (status: string) =>
+        Math.max(0, ...page.items.filter((t) => t.status === status).map((t) => t.position));
+      return {
+        ...page,
+        items: page.items.map((t) => {
+          if (t.id !== id) return t;
+          const position =
+            patch.position ?? (patch.status && patch.status !== t.status ? cachedBottom(patch.status) + 1 : t.position);
+          return { ...t, ...patch, position };
+        }),
+      };
+    },
   );
 }
 
