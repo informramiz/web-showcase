@@ -4,6 +4,10 @@ A multi-user project and task tracker built with Next.js 16, Drizzle and TanStac
 
 **Live demo:** [teamboard.codebyramiz.com](https://teamboard.codebyramiz.com) (Cloudflare Workers + D1). Demo login: `demo@teamboard.dev` / `demo1234`. The demo data is shared and reset from time to time.
 
+![TeamBoard demo: sign in, add a task, move it across the board, comment, reload, search the list](docs/demo/teamboard-demo.gif)
+
+Recorded in a desktop browser against a seeded local build of the same app (the Cloudflare demo was not used for the recording). Full 58-second demo (sign in, add a task, move it to In progress, comment, mark done, reload to show it persisted, search the list): [docs/demo/teamboard-demo.mp4](docs/demo/teamboard-demo.mp4).
+
 Sign up, create projects, invite teammates, and move tasks across a Kanban board or work through them in a filtered list.
 
 Built by Ramiz Raja as a small but complete example of full-stack TypeScript: Next.js App Router, a domain and service layer behind repository interfaces, server-side permissions, SQL through Drizzle, tests at three levels and CI.
